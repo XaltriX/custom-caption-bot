@@ -1,3 +1,13 @@
 moviepy==1.0.3
 telebot==0.0.4
+pyrogram
+TgCrypto
+pyromod==1.5
+# --- For-Database ------------ #
+pymongo
+dnspython
+# --- For-Web-Response ------- #
+aiohttp
+pip install --upgrade telebot
+
 
