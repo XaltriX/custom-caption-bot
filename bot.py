@@ -1,8 +1,6 @@
 import telebot
-from telebot import types
 import os
-from io import BytesIO
-from moviepy.editor import VideoFileClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -13,10 +11,12 @@ bot = telebot.TeleBot(TOKEN)
 # Dictionary to store user data
 user_data = {}
 
+# Command handler to start the bot
 @bot.message_handler(commands=['start'])
 def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video.")
 
+# Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
@@ -40,15 +40,17 @@ def handle_video(message):
     caption_msg = "Please add a caption for the thumbnail."
     bot.send_message(message.chat.id, caption_msg)
 
-    # Store user chat ID and thumbnail filename in user_data
-    user_data[message.chat.id] = {'thumbnail': thumbnail_filename}
+    # Store user chat ID, thumbnail filename, and video filename in user_data
+    user_data[message.chat.id] = {'thumbnail': thumbnail_filename, 'video': video_filename}
 
+# Handler to handle the caption provided by the user
 @bot.message_handler(func=lambda message: True)
 def handle_caption(message):
     # Retrieve user data
     user_id = message.chat.id
     if user_id in user_data:
         thumbnail_filename = user_data[user_id]['thumbnail']
+        video_filename = user_data[user_id]['video']  # Retrieve video filename
 
         # Save the caption provided by the user
         caption = message.text
@@ -65,16 +67,18 @@ def handle_caption(message):
         # Move to the next step
         bot.register_next_step_handler(message, handle_link)
     else:
-        # If user data is not found, ask the user to send a video first
+        # If user data is not found, ask the user to send a video first.
         bot.send_message(message.chat.id, "Please send a video first.")
 
+# Handler to handle the link provided by the user
 def handle_link(message):
     # Retrieve user data
     user_id = message.chat.id
     if user_id in user_data:
         thumbnail_filename = user_data[user_id]['thumbnail']
         caption = user_data[user_id]['caption']
-        
+        video_filename = user_data[user_id]['video']  # Retrieve video filename
+
         # Save the link provided by the user
         link = message.text
 
@@ -90,4 +94,5 @@ def handle_link(message):
         # If user data is not found, ask the user to send a video first.
         bot.send_message(message.chat.id, "Please send a video first.")
 
+# Start polling for messages
 bot.polling()
