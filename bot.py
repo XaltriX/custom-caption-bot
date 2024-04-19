@@ -41,7 +41,7 @@ def handle_video(message):
         chunk_size = 64 * 1024  # 64 KB
 
         while offset < file_size:
-            new_chunk = bot.download_file(file_path, offset, chunk_size)
+            new_chunk = bot.download_file(file_path, offset=offset, length=chunk_size)
             downloaded_file += new_chunk
             offset += len(new_chunk)
 
