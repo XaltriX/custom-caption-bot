@@ -2,7 +2,7 @@ import telebot
 from pymongo import MongoClient
 from gridfs import GridFS
 from moviepy.editor import VideoFileClip
-import os
+import io
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -13,7 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 # Connect to MongoDB
 mongo_url = "mongodb+srv://ytviralverse:2VPjBQ95DDnmVFu8@streamify.dvncffo.mongodb.net/?retryWrites=true&w=majority&appName=streamify"
 client = MongoClient(mongo_url)
-db = client["ngcustombot"]
+db = client["ngcustom"]
 fs = GridFS(db)
 
 # Dictionary to store user data
@@ -36,21 +36,13 @@ def handle_video(message):
         # Download the video file in chunks
         file_path = bot.get_file(file_id).file_path
         file_size = bot.get_file(file_id).file_size
-        downloaded_file = b''
-        offset = 0
-        chunk_size = 64 * 1024  # 64 KB
-
-        while offset < file_size:
-            new_chunk = bot.download_file(file_path, offset=offset, length=chunk_size)
-            downloaded_file += new_chunk
-            offset += len(new_chunk)
 
         # Save the video file in MongoDB using GridFS
-        video_id = fs.put(downloaded_file, filename=f"video_{file_id}.mp4")
+        video_id = fs.put(bot.download_file(file_path), filename=f"video_{file_id}.mp4")
 
         # Get video duration
         with fs.get(video_id) as video_data:
-            clip = VideoFileClip(video_data)
+            clip = VideoFileClip(io.BytesIO(video_data.read()))
             duration = min(clip.duration, 5)  # Limit duration to 5 seconds
             middle_time = clip.duration / 2  # Get the middle time of the video
 
@@ -60,7 +52,7 @@ def handle_video(message):
 
         # Extract segment from the middle of the video and save as GIF
         with fs.get(video_id) as video_data:
-            clip = VideoFileClip(video_data).subclip(start_time, end_time)
+            clip = VideoFileClip(io.BytesIO(video_data.read())).subclip(start_time, end_time)
             gif_filename = f"video_{file_id}.gif"
             clip.write_gif(gif_filename, fps=10)  # Save as GIF
 
