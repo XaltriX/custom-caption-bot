@@ -3,7 +3,7 @@ import os
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -21,36 +21,43 @@ def start_message(message):
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
 
-    # Get video file ID and download the file
-    file_id = message.video.file_id
-    file_info = bot.get_file(file_id)
-    file = bot.download_file(file_info.file_path)
+    try:
+        # Get video file ID
+        file_id = message.video.file_id
 
-    # Save the video file locally
-    video_filename = f"video_{file_id}.mp4"
-    with open(video_filename, 'wb') as f:
-        f.write(file)
+        # Download the video file
+        file_info = bot.get_file(file_id)
+        file_path = file_info.file_path
 
-    # Get video duration
-    clip = VideoFileClip(video_filename)
-    duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-    middle_time = clip.duration / 2  # Get the middle time of the video
+        # Save the video file locally
+        video_filename = f"video_{file_id}.mp4"
+        bot.download_file(file_path, video_filename)
 
-    # Calculate start and end times for the segment
-    start_time = max(middle_time - (duration / 2), 0)
-    end_time = min(middle_time + (duration / 2), clip.duration)
+        # Get video duration
+        clip = VideoFileClip(video_filename)
+        duration = min(clip.duration, 5)  # Limit duration to 5 seconds
+        middle_time = clip.duration / 2  # Get the middle time of the video
 
-    # Extract segment from the middle of the video and save as GIF
-    clip = clip.subclip(start_time, end_time)
-    gif_filename = f"video_{file_id}.gif"
-    clip.write_gif(gif_filename, fps=10)  # Save as GIF
+        # Calculate start and end times for the segment
+        start_time = max(middle_time - (duration / 2), 0)
+        end_time = min(middle_time + (duration / 2), clip.duration)
 
-    # Ask user to add caption
-    caption_msg = "Please add a caption for the GIF."
-    bot.send_message(message.chat.id, caption_msg)
+        # Extract segment from the middle of the video and save as GIF
+        clip = clip.subclip(start_time, end_time)
+        gif_filename = f"video_{file_id}.gif"
+        clip.write_gif(gif_filename, fps=10)  # Save as GIF
 
-    # Store user chat ID, GIF filename, and video filename in user_data
-    user_data[message.chat.id] = {'gif': gif_filename, 'video': video_filename}
+        # Ask user to add caption
+        caption_msg = "Please add a caption for the GIF."
+        bot.send_message(message.chat.id, caption_msg)
+
+        # Store user chat ID, GIF filename, and video filename in user_data
+        user_data[message.chat.id] = {'gif': gif_filename, 'video': video_filename}
+
+    except Exception as e:
+        # Notify the user about the error
+        bot.send_message(message.chat.id, f"An error occurred while processing the video: {str(e)}")
+        bot.send_message(message.chat.id, "Please try again.")
 
 # Handler to handle the caption provided by the user
 @bot.message_handler(func=lambda message: True)
