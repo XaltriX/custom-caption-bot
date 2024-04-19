@@ -33,16 +33,16 @@ def handle_video(message):
     file_id = message.video.file_id
 
     # Download the video file in chunks
-    file_path = bot.get_file(file_id).file_path
-    file_size = bot.get_file(file_id).file_size
-    downloaded_file = b''
-    offset = 0
-    chunk_size = 64 * 1024  # 64 KB
+    # Download the video file in chunks
+downloaded_file = b''
+offset = 0
+chunk_size = 64 * 1024  # 64 KB
 
-    while offset < file_size:
-        new_chunk = bot.download_file(file_path, offset, chunk_size)
-        downloaded_file += new_chunk
-        offset += len(new_chunk)
+while offset < file_size:
+    new_chunk = bot.download_file(file_path)
+    downloaded_file += new_chunk
+    offset += len(new_chunk)
+
 
     # Save the video file locally
     video_filename = f"video_{file_id}.mp4"
