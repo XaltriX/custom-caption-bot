@@ -21,25 +21,15 @@ def start_message(message):
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
 
-    # Get video file ID
+    # Get video file ID and download the file
     file_id = message.video.file_id
-
-    # Download the video file in chunks
-    file_path = bot.get_file(file_id).file_path
-    file_size = bot.get_file(file_id).file_size
-    downloaded_file = b''
-    offset = 0
-    chunk_size = 64 * 1024  # 64 KB
-
-    while offset < file_size:
-        new_chunk = bot.download_file(file_path, offset, chunk_size)
-        downloaded_file += new_chunk
-        offset += len(new_chunk)
+    file_info = bot.get_file(file_id)
+    file = bot.download_file(file_info.file_path)
 
     # Save the video file locally
     video_filename = f"video_{file_id}.mp4"
     with open(video_filename, 'wb') as f:
-        f.write(downloaded_file)
+        f.write(file)
 
     # Get video duration
     clip = VideoFileClip(video_filename)
