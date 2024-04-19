@@ -3,13 +3,16 @@ import os
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
 # Dictionary to store user data
 user_data = {}
+
+# Maximum file size allowed (in bytes)
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 
 # Command handler to start the bot
 @bot.message_handler(commands=['start'])
@@ -19,45 +22,53 @@ def start_message(message):
 # Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
+    # Check if file size exceeds the maximum allowed size
+    if message.video.file_size > MAX_FILE_SIZE:
+        bot.send_message(message.chat.id, "Sorry, I can only process videos up to 20 MB.")
+        return
+
     bot.send_message(message.chat.id, "Processing the video...")
 
     # Get video file ID
     file_id = message.video.file_id
 
-    try:
-        # Download the video file
-        video_file = bot.download_file(file_id)
+    # Download the video file in chunks
+    file_path = bot.get_file(file_id).file_path
+    file_size = bot.get_file(file_id).file_size
+    downloaded_file = b''
+    offset = 0
+    chunk_size = 64 * 1024  # 64 KB
 
-        # Save the video file locally
-        video_filename = f"video_{file_id}.mp4"
-        with open(video_filename, 'wb') as f:
-            f.write(video_file)
+    while offset < file_size:
+        new_chunk = bot.download_file(file_path, offset, chunk_size)
+        downloaded_file += new_chunk
+        offset += len(new_chunk)
 
-        # Get video duration
-        clip = VideoFileClip(video_filename)
-        duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-        middle_time = clip.duration / 2  # Get the middle time of the video
+    # Save the video file locally
+    video_filename = f"video_{file_id}.mp4"
+    with open(video_filename, 'wb') as f:
+        f.write(downloaded_file)
 
-        # Calculate start and end times for the segment
-        start_time = max(middle_time - (duration / 2), 0)
-        end_time = min(middle_time + (duration / 2), clip.duration)
+    # Get video duration
+    clip = VideoFileClip(video_filename)
+    duration = min(clip.duration, 5)  # Limit duration to 5 seconds
+    middle_time = clip.duration / 2  # Get the middle time of the video
 
-        # Extract segment from the middle of the video and save as GIF
-        clip = clip.subclip(start_time, end_time)
-        gif_filename = f"video_{file_id}.gif"
-        clip.write_gif(gif_filename, fps=10)  # Save as GIF
+    # Calculate start and end times for the segment
+    start_time = max(middle_time - (duration / 2), 0)
+    end_time = min(middle_time + (duration / 2), clip.duration)
 
-        # Ask user to add caption
-        caption_msg = "Please add a caption for the GIF."
-        bot.send_message(message.chat.id, caption_msg)
+    # Extract segment from the middle of the video and save as GIF
+    clip = clip.subclip(start_time, end_time)
+    gif_filename = f"video_{file_id}.gif"
+    clip.write_gif(gif_filename, fps=10)  # Save as GIF
 
-        # Store user chat ID, GIF filename, and video filename in user_data
-        user_data[message.chat.id] = {'gif': gif_filename, 'video': video_filename}
+    # Ask user to add caption
+    caption_msg = "Please add a caption for the GIF."
+    bot.send_message(message.chat.id, caption_msg)
 
-    except Exception as e:
-        # Handle errors
-        bot.send_message(message.chat.id, f"An error occurred while processing the video: {str(e)}")
-        bot.send_message(message.chat.id, "Please try again.")
+    # Store user chat ID, GIF filename, and video filename in user_data
+    user_data[message.chat.id] = {'gif': gif_filename, 'video': video_filename}
 
 # Handler to handle the caption provided by the user
 @bot.message_handler(func=lambda message: True)
@@ -111,10 +122,4 @@ def handle_link(message):
         bot.send_message(message.chat.id, "Please send a video first.")
 
 # Start polling for messages
-while True:
-    try:
-        bot.polling()
-    except Exception as e:
-        # Restart the bot gracefully if an error occurs
-        print(f"Error occurred: {e}")
-        continue
+bot.polling()
