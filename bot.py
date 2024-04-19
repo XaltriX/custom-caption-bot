@@ -20,29 +20,24 @@ def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video.")
 
 # Handler to process the uploaded video
+# Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
-    # Check if file size exceeds the maximum allowed size
-    if message.video.file_size > MAX_FILE_SIZE:
-        bot.send_message(message.chat.id, "Sorry, I can only process videos up to 20 MB.")
-        return
-
     bot.send_message(message.chat.id, "Processing the video...")
 
-    # Get video file ID
+    # Get video file ID and size
     file_id = message.video.file_id
+    file_size = message.video.file_size
 
     # Download the video file in chunks
-    # Download the video file in chunks
-downloaded_file = b''
-offset = 0
-chunk_size = 64 * 1024  # 64 KB
+    downloaded_file = b''
+    offset = 0
+    chunk_size = 64 * 1024  # 64 KB
 
-while offset < file_size:
-    new_chunk = bot.download_file(file_path)
-    downloaded_file += new_chunk
-    offset += len(new_chunk)
-
+    while offset < file_size:
+        new_chunk = bot.download_file(file_id)
+        downloaded_file += new_chunk
+        offset += len(new_chunk)
 
     # Save the video file locally
     video_filename = f"video_{file_id}.mp4"
