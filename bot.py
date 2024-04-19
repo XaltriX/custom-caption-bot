@@ -5,6 +5,9 @@ from moviepy.editor import VideoFileClip
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
+# Maximum allowed file size in bytes (adjust as needed)
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
@@ -24,6 +27,12 @@ def handle_video(message):
     # Get video file ID and download the file
     file_id = message.video.file_id
     file_info = bot.get_file(file_id)
+
+    # Check if file size exceeds the maximum limit
+    if file_info.file_size > MAX_FILE_SIZE_BYTES:
+        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please restart the bot and send a smaller video.")
+        return
+
     file = bot.download_file(file_info.file_path)
 
     # Save the video file locally
