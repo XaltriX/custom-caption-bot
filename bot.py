@@ -3,7 +3,7 @@ import os
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
