@@ -7,14 +7,19 @@ import io
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
+# Your MongoDB connection URL
+MONGO_URL = 'mongodb+srv://ytviralverse:B5LYq0IPFpDT1mNs@ngcustombot.6ngugfq.mongodb.net/'
+
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
 # Connect to MongoDB
-mongo_url = "mongodb+srv://ytviralverse:2VPjBQ95DDnmVFu8@streamify.dvncffo.mongodb.net/?retryWrites=true&w=majority&appName=streamify"
-client = MongoClient(mongo_url)
-db = client["ngcustom"]
+client = MongoClient(MONGO_URL)
+db = client["ngcustombot"]
 fs = GridFS(db)
+
+# Your Telegram channel ID where you want to store metadata
+CHANNEL_ID = 'YOUR_TELEGRAM_CHANNEL_ID'
 
 # Dictionary to store user data
 user_data = {}
@@ -83,29 +88,11 @@ def handle_caption(message):
         # Add "@NeonGhost_Networks" at the beginning of the caption
         caption_with_tag = "@NeonGhost_Networks\n" + caption
 
-        # Update user_data with modified caption
-        user_data[user_id]['caption'] = caption_with_tag
+        # Store metadata in the Telegram channel
+        channel_message = bot.send_message(CHANNEL_ID, caption_with_tag)
 
-        # Ask user to provide the link directly to the caption
-        link_msg = "Please provide a link to add in the caption."
-        bot.send_message(message.chat.id, link_msg)
-        # Move to the next step
-        bot.register_next_step_handler(message, handle_link)
-    else:
-        # If user data is not found, ask the user to send a video first.
-        bot.send_message(message.chat.id, "Please send a video first.")
-
-# Handler to handle the link provided by the user
-def handle_link(message):
-    # Retrieve user data
-    user_id = message.chat.id
-    if user_id in user_data:
-        gif_filename = user_data[user_id]['gif']
-        caption = user_data[user_id]['caption']
-        video_id = user_data[user_id]['video_id']
-
-        # Save the link provided by the user
-        link = message.text
+        # Retrieve the link to the message
+        link = f"https://t.me/{CHANNEL_ID}/{channel_message.message_id}"
 
         # Send back the GIF with caption and link embedded
         with open(gif_filename, 'rb') as gif:
