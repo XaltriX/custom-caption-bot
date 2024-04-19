@@ -6,7 +6,7 @@ from moviepy.editor import VideoFileClip
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 50 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
