@@ -42,24 +42,24 @@ def handle_video(message):
 
     # Get video duration
     clip = VideoFileClip(video_filename)
-    duration = min(clip.duration, 5)  # Limit duration to 5 seconds
+    duration = min(clip.duration, 6) - 1  # Limit duration to 6 seconds and extract from middle
     middle_time = clip.duration / 2  # Get the middle time of the video
 
     # Calculate start and end times for the segment
     start_time = max(middle_time - (duration / 2), 0)
     end_time = min(middle_time + (duration / 2), clip.duration)
 
-    # Extract segment from the middle of the video and save as GIF
+    # Extract segment from the middle of the video
     clip = clip.subclip(start_time, end_time)
-    gif_filename = f"video_{file_id}.gif"
-    clip.write_gif(gif_filename, fps=10)  # Save as GIF
+    extracted_filename = f"extracted_{file_id}.mp4"
+    clip.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
 
     # Ask user to add caption
-    caption_msg = "Please add a caption for the GIF."
+    caption_msg = "Please add a caption for the video."
     bot.send_message(message.chat.id, caption_msg)
 
-    # Store user chat ID, GIF filename, and video filename in user_data
-    user_data[message.chat.id] = {'gif': gif_filename, 'video': video_filename}
+    # Store user chat ID and extracted filename in user_data
+    user_data[message.chat.id] = {'extracted_video': extracted_filename}
 
 # Handler to handle the caption provided by the user
 @bot.message_handler(func=lambda message: True)
@@ -67,17 +67,13 @@ def handle_caption(message):
     # Retrieve user data
     user_id = message.chat.id
     if user_id in user_data:
-        gif_filename = user_data[user_id]['gif']
-        video_filename = user_data[user_id]['video']  # Retrieve video filename
+        extracted_filename = user_data[user_id]['extracted_video']
 
         # Save the caption provided by the user
         caption = message.text
 
-        # Add "@NeonGhost_Networks" at the beginning of the caption
-        caption_with_tag = "@NeonGhost_Networks\n" + caption
-
-        # Update user_data with modified caption
-        user_data[user_id]['caption'] = caption_with_tag
+        # Add "Video Link is Given Below" before the actual link
+        caption_with_link = f"Video Link is Given Below\n{caption}"
 
         # Ask user to provide the link directly to the caption
         link_msg = "Please provide a link to add in the caption."
@@ -93,21 +89,16 @@ def handle_link(message):
     # Retrieve user data
     user_id = message.chat.id
     if user_id in user_data:
-        gif_filename = user_data[user_id]['gif']
-        caption = user_data[user_id]['caption']
-        video_filename = user_data[user_id]['video']  # Retrieve video filename
+        extracted_filename = user_data[user_id]['extracted_video']
+        caption = message.text
 
-        # Save the link provided by the user
-        link = message.text
-
-        # Send back the GIF with caption and link embedded
-        with open(gif_filename, 'rb') as gif:
-            bot.send_document(message.chat.id, gif, caption=f"{caption}\n\n{link}")
+        # Send back the video with caption and link embedded
+        with open(extracted_filename, 'rb') as video:
+            bot.send_video(message.chat.id, video, caption=caption)
 
         # Cleanup user_data and remove local files
         del user_data[user_id]
-        os.remove(gif_filename)
-        os.remove(video_filename)
+        os.remove(extracted_filename)
     else:
         # If user data is not found, ask the user to send a video first.
         bot.send_message(message.chat.id, "Please send a video first.")
