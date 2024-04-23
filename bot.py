@@ -6,7 +6,7 @@ from moviepy.editor import VideoFileClip
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -72,9 +72,6 @@ def handle_caption(message):
         # Save the caption provided by the user
         caption = message.text
 
-        # Add "Video Link is Given Below" before the actual link
-        caption_with_link = f"Video Link is Given Below\n{caption}"
-
         # Ask user to provide the link directly to the caption
         link_msg = "Please provide a link to add in the caption."
         bot.send_message(message.chat.id, link_msg)
@@ -92,9 +89,12 @@ def handle_link(message):
         extracted_filename = user_data[user_id]['extracted_video']
         caption = message.text
 
+        # Format the caption with the link
+        caption_with_link = f"🔗 Video Link is Given Below:\n{caption}"
+
         # Send back the video with caption and link embedded
         with open(extracted_filename, 'rb') as video:
-            bot.send_video(message.chat.id, video, caption=caption)
+            bot.send_video(message.chat.id, video, caption=caption_with_link)
 
         # Cleanup user_data and remove local files
         del user_data[user_id]
