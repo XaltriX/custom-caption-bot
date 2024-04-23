@@ -54,27 +54,29 @@ def handle_video(message):
     extracted_filename = f"extracted_{file_id}.mp4"
     clip.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
 
-    # Ask user to add caption
-    caption_msg = "Please add a caption for the video."
+    # Ask user for custom caption
+    caption_msg = "Please provide a custom caption for the video."
     bot.send_message(message.chat.id, caption_msg)
-
     # Store user chat ID and extracted filename in user_data
     user_data[message.chat.id] = {'extracted_video': extracted_filename}
 
-# Handler to handle the caption provided by the user
+# Handler to handle the custom caption provided by the user
 @bot.message_handler(func=lambda message: True)
 def handle_caption(message):
     # Retrieve user data
     user_id = message.chat.id
     if user_id in user_data:
         extracted_filename = user_data[user_id]['extracted_video']
-
-        # Save the caption provided by the user
         caption = message.text
 
-        # Ask user to provide the link directly to the caption
+        # Add "@NeonGhost_Networks" at the beginning of the caption
+        caption_with_tag = "@NeonGhost_Networks\n" + caption
+
+        # Ask user to provide the link
         link_msg = "Please provide a link to add in the caption."
         bot.send_message(message.chat.id, link_msg)
+        # Store the custom caption in user_data
+        user_data[user_id]['caption'] = caption_with_tag
         # Move to the next step
         bot.register_next_step_handler(message, handle_link)
     else:
@@ -87,10 +89,11 @@ def handle_link(message):
     user_id = message.chat.id
     if user_id in user_data:
         extracted_filename = user_data[user_id]['extracted_video']
-        caption = message.text
+        caption = user_data[user_id]['caption']
+        link = message.text
 
         # Format the caption with the link
-        caption_with_link = f"🔗 Video Link is Given Below:\n{caption}"
+        caption_with_link = f"{caption}\n\n🔗 Video Link is Given Below:\n{link}"
 
         # Send back the video with caption and link embedded
         with open(extracted_filename, 'rb') as video:
