@@ -62,9 +62,9 @@ def handle_video(message):
         end_time = min(start_time + segment_duration, total_duration)
 
         # Extract segment from the video
-        extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"
-        clip_sub = clip.subclip(start_time, end_time)
-        clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None)
+        extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"  # Specify the output format as '.mp4'
+        clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None, format="mp4")
+
 
         # Send extracted segment to user
         with open(extracted_filename, 'rb') as video:
