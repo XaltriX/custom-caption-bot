@@ -1,66 +1,106 @@
-import telebot
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import os
 import random
 
-# Initialize your Telegram bot token
-bot_token = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
-bot = telebot.TeleBot(bot_token)
+# Your Telegram Bot API token
+TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
-@bot.message_handler(content_types=['video'])
-def handle_video(message):
-    video_file_id = message.video.file_id
-    chat_id = message.chat.id
-    bot.send_message(chat_id, "Processing video...")
+# Maximum allowed file size in bytes (adjust as needed)
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
-    # Function to extract a 5-second segment from the video
-    def extract_segment(video_file_id):
-        # Placeholder logic for video processing
-        return "sample_video.mp4"
+# Initialize bot
+updater = Updater(token=TOKEN, use_context=True)
+dispatcher = updater.dispatcher
 
-    # Function to send the sample video and prompt for confirmation
-    def send_sample_video(chat_id, sample_video_path):
-        caption = "@NeonGhost_Networks\nIs this sample video suitable? Please confirm."
-        msg = bot.send_video(chat_id, open(sample_video_path, 'rb'), caption=caption)
-        return msg.message_id
+# Command handler to start the bot
+def start(update, context):
+    update.message.reply_text("Welcome! Please send a video🤝")
 
-    # Send the sample video and prompt for confirmation
-    sample_video_path = extract_segment(video_file_id)
-    sample_video_msg_id = send_sample_video(chat_id, sample_video_path)
+# Handler to process the uploaded video
+def handle_video(update, context):
+    video_file = update.message.video.get_file()
+    video_path = f"video_{update.message.chat_id}.mp4"
+    video_file.download(video_path)
+    extract_sample(update.message.chat_id, video_path)
 
-    # Function to handle user confirmation
-    def handle_confirmation(message):
-        if message.text.lower() == 'yes':
-            bot.send_message(chat_id, "Please provide custom text to be included between 🚨🚨 emojis:")
-            bot.register_next_step_handler(message, handle_custom_text)
-        elif message.text.lower() == 'no':
-            # Extract sample videos from different parts until approval
-            sample_video_path = extract_segment(video_file_id)
-            send_sample_video(chat_id, sample_video_path)
+# Extract a 5-second sample from the video
+def extract_sample(chat_id, video_path):
+    sample_duration = 5
+    command = f"ffmpeg -i {video_path} -ss 0 -t {sample_duration} -async 1 extracted_sample.mp4 -y"
+    os.system(command)
+    send_sample_confirmation(chat_id, "extracted_sample.mp4")
 
-    # Register handler for user confirmation
-    @bot.callback_query_handler(func=lambda call: True)
-    def handle_callback_query(call):
-        if call.message.message_id == sample_video_msg_id:
-            handle_confirmation(call.message)
+# Send the sample video for confirmation
+def send_sample_confirmation(chat_id, sample_path):
+    keyboard = [
+        [InlineKeyboardButton("Yes", callback_data='confirm'),
+         InlineKeyboardButton("No", callback_data='reject')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    context.bot.send_video(chat_id=chat_id, video=open(sample_path, 'rb'),
+                           caption="Is this sample appropriate?",
+                           reply_markup=reply_markup)
 
-    # Function to handle custom text input
-    def handle_custom_text(message):
-        custom_text = message.text
-        bot.send_message(chat_id, "Please provide the link to be included in the caption:")
-        bot.register_next_step_handler(message, lambda msg: handle_caption_link(msg, custom_text))
+# Handle user confirmation
+def handle_confirmation(update, context):
+    query = update.callback_query
+    if query.data == 'confirm':
+        query.answer()
+        query.edit_message_text("Please provide custom text between 🚨🚨 and the link for the caption.")
+    elif query.data == 'reject':
+        query.answer()
+        extract_random_sample(query.message.chat_id, "extracted_sample.mp4")
 
-    # Function to handle caption link input and send final caption back to user
-    def handle_caption_link(message, custom_text):
-        caption_link = message.text
-        final_caption = f"🚨🚨{custom_text}🚨🚨\nLink: {caption_link}"
-        bot.send_message(chat_id, f"Final Caption:\n{final_caption}")
+# Extract a random 5-second sample from the video
+def extract_random_sample(chat_id, video_path):
+    sample_duration = 5
+    total_duration = get_video_duration(video_path)
+    if total_duration <= sample_duration:
+        send_sample_confirmation(chat_id, video_path)
+    else:
+        start_time = random.randint(0, total_duration - sample_duration)
+        command = f"ffmpeg -i {video_path} -ss {start_time} -t {sample_duration} -async 1 extracted_sample.mp4 -y"
+        os.system(command)
+        send_sample_confirmation(chat_id, "extracted_sample.mp4")
 
-    # Register handler for custom text input
-    bot.register_next_step_handler(message, handle_custom_text)
+# Get the duration of the video in seconds
+def get_video_duration(video_path):
+    command = f"ffprobe -i {video_path} -show_entries format=duration -v quiet -of csv='p=0'"
+    result = os.popen(command).read()
+    return float(result)
 
-# Start an infinite loop to keep the bot running
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print(f"Error: {e}")
-        # Handle exceptions here as needed
+# Handle custom text and link input
+def handle_text_and_link(update, context):
+    text = update.message.text
+    context.user_data['text'] = text
+    update.message.reply_text("Please provide the link to include in the caption.")
+
+# Handle link input and generate final caption
+def handle_link(update, context):
+    link = update.message.text
+    text = context.user_data['text']
+    caption = f"@NeonGhost_Networks\n🚨🚨 {text} 🚨🚨\n\n🔗 Video Link: {link}"
+    context.bot.send_message(update.message.chat_id, "Generating final video with custom caption...")
+    send_final_video(update.message.chat_id, "extracted_sample.mp4", caption)
+
+# Send the final video with custom caption
+def send_final_video(chat_id, sample_path, caption):
+    context.bot.send_video(chat_id=chat_id, video=open(sample_path, 'rb'), caption=caption)
+
+# Set up the handlers
+start_handler = CommandHandler('start', start)
+video_handler = MessageHandler(Filters.video, handle_video)
+confirmation_handler = CallbackQueryHandler(handle_confirmation)
+text_handler = MessageHandler(Filters.text & ~Filters.command, handle_text_and_link)
+link_handler = MessageHandler(Filters.text & ~Filters.command, handle_link)
+
+dispatcher.add_handler(start_handler)
+dispatcher.add_handler(video_handler)
+dispatcher.add_handler(confirmation_handler)
+dispatcher.add_handler(text_handler)
+dispatcher.add_handler(link_handler)
+
+# Start the bot
+updater.start_polling()
+updater.idle()
