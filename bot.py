@@ -5,7 +5,8 @@ from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
-# Maximum allowed file size in bytes
+
+# Maximum allowed file size in bytes (adjust as needed)
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 # Initialize bot
@@ -21,17 +22,18 @@ def extract_segment(video_filename):
     
     # List to store start times
     start_times = []
+    
     # Add start time from the beginning
     start_times.append(0)
+    
     # Add start time from the middle
     start_times.append(max(clip.duration / 2 - duration / 2, 0))
+    
     # Add start time from the ending
     start_times.append(max(clip.duration - duration, 0))
+    
     # Add start time from randomly anywhere
     start_times.append(random.uniform(0, max(clip.duration - duration, 0)))
-    
-    # Shuffle the start times to select randomly
-    random.shuffle(start_times)
     
     for start_time in start_times:
         end_time = min(start_time + duration, clip.duration)  # End time for segment
@@ -66,15 +68,12 @@ def handle_video(message):
     with open(video_filename, 'wb') as f:
         f.write(file)
 
-    try:
-        # Extract a new 5-second segment and ask the user for confirmation
-        extracted_filename = extract_segment(video_filename)
-        bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+    # Extract a 5-second segment and ask the user for confirmation
+    extracted_filename = extract_segment(video_filename)
+    bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
 
-        # Store user chat ID and extracted filename in user_data
-        user_data[message.chat.id] = {"extracted_filename": extracted_filename}
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
+    # Store user chat ID and extracted filename in user_data
+    user_data[message.chat.id] = {"extracted_filename": extracted_filename}
 
 # Keyboard markup for confirmation
 def confirmation_keyboard():
@@ -92,10 +91,8 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            # Extract a new segment and send it to the user
-            extracted_filename = extract_segment(extracted_filename)
+            bot.send_message(message.chat.id, "Let's try another segment.")
             bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-            user_data[user_id]["extracted_filename"] = extracted_filename  # Update extracted filename in user_data
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
@@ -119,7 +116,7 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link
-        formatted_caption = f"@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
+        formatted_caption = f"@NeonGhost_Networks\n\n🚨{caption}🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
 
         # Send back the video with caption and link embedded
         try:
