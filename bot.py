@@ -50,12 +50,15 @@ def handle_video(message):
     with open(video_filename, 'wb') as f:
         f.write(file)
 
-    # Extract a 5-second segment and ask the user for confirmation
-    extracted_filename = extract_segment(video_filename)
-    bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+    try:
+        # Extract a 5-second segment and ask the user for confirmation
+        extracted_filename = extract_segment(video_filename)
+        bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
 
-    # Store user chat ID and extracted filename in user_data
-    user_data[message.chat.id] = {"extracted_filename": extracted_filename}
+        # Store user chat ID and extracted filename in user_data
+        user_data[message.chat.id] = {"extracted_filename": extracted_filename}
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
 # Keyboard markup for confirmation
 def confirmation_keyboard():
