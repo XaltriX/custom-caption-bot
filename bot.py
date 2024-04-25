@@ -1,12 +1,13 @@
 import telebot
 import os
+import random
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 20 MB
+MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -30,7 +31,7 @@ def handle_video(message):
 
     # Check if file size exceeds the maximum limit
     if file_info.file_size > MAX_FILE_SIZE_BYTES:
-        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please restart the bot and send a smaller video.")
+        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please send a smaller video.")
         return
 
     file = bot.download_file(file_info.file_path)
@@ -42,26 +43,66 @@ def handle_video(message):
 
     # Get video duration
     clip = VideoFileClip(video_filename)
-    duration = min(clip.duration, 6) - 1  # Limit duration to 6 seconds and extract from middle
-    middle_time = clip.duration / 2  # Get the middle time of the video
+    total_duration = clip.duration
 
-    # Calculate start and end times for the segment
-    start_time = max(middle_time - (duration / 2), 0)
-    end_time = min(middle_time + (duration / 2), clip.duration)
+    # Define segment duration (5 seconds)
+    segment_duration = 5
 
-    # Extract segment from the middle of the video
-    clip = clip.subclip(start_time, end_time)
-    extracted_filename = f"extracted_{file_id}.mp4"
-    clip.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+    # Initialize segment start time
+    start_time = 0
 
-    # Ask user for custom caption
-    caption_msg = "Please provide a custom caption for the video."
-    bot.send_message(message.chat.id, caption_msg)
-    # Store user chat ID and extracted filename in user_data
-    user_data[message.chat.id] = {'extracted_video': extracted_filename}
+    # Initialize loop counter
+    loop_counter = 1
+
+    # Loop to extract and send segments until user approves or end of video reached
+    while start_time + segment_duration < total_duration:
+        bot.send_message(message.chat.id, f"Extracting segment {loop_counter}...")
+
+        # Calculate end time for the segment
+        end_time = min(start_time + segment_duration, total_duration)
+
+        # Extract segment from the video
+        extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"
+        clip_sub = clip.subclip(start_time, end_time)
+        clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None)
+
+        # Send extracted segment to user
+        with open(extracted_filename, 'rb') as video:
+            bot.send_video(message.chat.id, video)
+
+        # Ask user if the segment is acceptable
+        response = bot.send_message(message.chat.id, f"Is this segment acceptable? (Yes/No)")
+
+        # Wait for user response
+        user_response = bot.wait_for_message(message.chat.id)
+
+        # If user approves, break out of the loop
+        if user_response.text.lower() == 'yes':
+            bot.send_message(message.chat.id, "Segment accepted.")
+            # Ask user for custom caption
+            caption_msg = "Please provide a custom caption for the video."
+            bot.send_message(message.chat.id, caption_msg)
+            user_data[message.chat.id] = {'extracted_video': extracted_filename}
+            bot.register_next_step_handler(user_response, handle_caption)
+            break
+        else:
+            # Increment loop counter
+            loop_counter += 1
+
+            # Update start time for next segment
+            start_time = end_time
+
+            # Remove temporary files
+            os.remove(extracted_filename)
+
+    # If end of video reached without user approval, send a message
+    if start_time >= total_duration:
+        bot.send_message(message.chat.id, "End of video reached without finding an acceptable segment.")
+
+    # Cleanup: Remove local files
+    os.remove(video_filename)
 
 # Handler to handle the custom caption provided by the user
-@bot.message_handler(func=lambda message: True)
 def handle_caption(message):
     # Retrieve user data
     user_id = message.chat.id
