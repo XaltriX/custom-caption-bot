@@ -79,6 +79,7 @@ def handle_video(message):
 
 # Handler to handle confirmation of the video segment
 # Handler to handle confirmation of the video segment
+# Handler to handle confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
 def handle_confirmation(message):
     user_id = message.chat.id
@@ -89,8 +90,12 @@ def handle_confirmation(message):
             bot.register_next_step_handler(message, handle_caption)
         elif message.text.lower() == "no":
             bot.send_message(message.chat.id, "Let's try another segment.")
-            # Remove the current extracted file
-            os.remove(extracted_filename)
+            # Remove the current extracted file if it exists
+            if os.path.exists(extracted_filename):
+                os.remove(extracted_filename)
+            else:
+                bot.send_message(message.chat.id, "The file to be removed does not exist.")
+            
             # Extract a new segment and send it for confirmation
             segments = extract_segments(video_filename)
             new_segment = random.choice(segments)
@@ -103,7 +108,6 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Please respond with 'Yes' or 'No'.")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
-
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
