@@ -21,6 +21,7 @@ def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video.")
 
 # Handler to process the uploaded video
+# Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
@@ -78,7 +79,7 @@ def handle_video(message):
         user_response = bot.register_next_step_handler_by_chat_id(message.chat.id, handle_user_response)
 
         # If user approves, break out of the loop
-        if user_response.lower() == 'yes':
+        if user_response and user_response.lower() == 'yes':
             bot.send_message(message.chat.id, "Segment accepted.")
             # Ask user for custom caption
             caption_msg = "Please provide a custom caption for the video."
@@ -102,6 +103,7 @@ def handle_video(message):
 
     # Cleanup: Remove local files
     os.remove(video_filename)
+
 
 # Handler to handle the user's response to the segment
 def handle_user_response(user_response, chat_id):
