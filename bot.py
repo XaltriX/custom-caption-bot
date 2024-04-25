@@ -15,6 +15,9 @@ bot = telebot.TeleBot(TOKEN)
 # Dictionary to store user data
 user_data = {}
 
+# Global variable to store the extracted filename
+extracted_filename = ""
+
 # Command handler to start the bot
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -23,6 +26,7 @@ def start_message(message):
 # Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
+    global extracted_filename  # Define extracted_filename as a global variable
     bot.send_message(message.chat.id, "Processing the video...")
 
     # Get video file ID and download the file
@@ -52,8 +56,6 @@ def handle_video(message):
     # Initialize loop counter
     loop_counter = 1
 
-    extracted_filename = ""  # Define extracted_filename outside the loop
-
     # Loop to extract and send segments until user approves or end of video reached
     while start_time + segment_duration < total_duration:
         bot.send_message(message.chat.id, f"Extracting segment {loop_counter}...")
@@ -76,14 +78,27 @@ def handle_video(message):
                             types.InlineKeyboardButton(text="No", callback_data="reject"))
         bot.send_message(message.chat.id, "Is this segment acceptable?", reply_markup=response_markup)
 
-        # Increment loop counter
-        loop_counter += 1
+        # Wait for user response
+        user_response = bot.register_next_step_handler_by_chat_id(message.chat.id, handle_user_response)
 
-        # Update start time for next segment
-        start_time = end_time
+        # If user approves, break out of the loop
+        if user_response and user_response.lower() == 'yes':
+            bot.send_message(message.chat.id, "Segment accepted.")
+            # Ask user for custom caption
+            caption_msg = "Please provide a custom caption for the video."
+            bot.send_message(message.chat.id, caption_msg)
+            user_data[message.chat.id] = {'extracted_video': extracted_filename}
+            bot.register_next_step_handler(user_response, handle_caption)
+            break
+        else:
+            # Increment loop counter
+            loop_counter += 1
 
-        # Remove temporary files
-        os.remove(extracted_filename)
+            # Update start time for next segment
+            start_time = end_time
+
+            # Remove temporary files
+            os.remove(extracted_filename)
 
     # If end of video reached without user approval, send a message
     if start_time >= total_duration:
@@ -92,18 +107,10 @@ def handle_video(message):
     # Cleanup: Remove local files
     os.remove(video_filename)
 
-# Handler to handle inline keyboard button callbacks
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback_query(call):
-    if call.data == "accept":
-        bot.send_message(call.message.chat.id, "You accepted the segment.")
-        # Ask user for custom caption
-        caption_msg = "Please provide a custom caption for the video."
-        bot.send_message(call.message.chat.id, caption_msg)
-        user_data[call.message.chat.id] = {'extracted_video': extracted_filename}
-        bot.register_next_step_handler(call.message, handle_caption)
-    elif call.data == "reject":
-        bot.send_message(call.message.chat.id, "You rejected the segment.")
+
+# Handler to handle the user's response to the segment
+def handle_user_response(user_response, chat_id):
+    pass  # You can handle the user's response here if needed
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
@@ -149,6 +156,16 @@ def handle_link(message):
     else:
         # If user data is not found, ask the user to send a video first.
         bot.send_message(message.chat.id, "Please send a video first.")
+
+# Handler to handle inline keyboard button callbacks
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback_query(call):
+    global extracted_filename  # Access the global extracted_filename variable
+    if call.data == "accept":
+        bot.send_message(call.message.chat.id, "You accepted the segment.")
+        user_data[call.message.chat.id] = {'extracted_video': extracted_filename}  # Store the extracted filename
+    elif call.data == "reject":
+        bot.send_message(call.message.chat.id, "You rejected the segment.")
 
 # Start polling for messages
 bot.polling()
