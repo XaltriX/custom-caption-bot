@@ -54,46 +54,47 @@ def handle_video(message):
     # Initialize loop counter
     loop_counter = 1
 
-    # Loop to extract and send segments until user approves or end of video reached
-    while start_time + segment_duration < total_duration:
-        bot.send_message(message.chat.id, f"Extracting segment {loop_counter}...")
+   # Loop to extract and send segments until user approves or end of video reached
+while start_time + segment_duration < total_duration:
+    bot.send_message(message.chat.id, f"Extracting segment {loop_counter}...")
 
-        # Calculate end time for the segment
-        end_time = min(start_time + segment_duration, total_duration)
+    # Calculate end time for the segment
+    end_time = min(start_time + segment_duration, total_duration)
 
-        # Extract segment from the video
-        extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"  # Specify the output format as '.mp4'
-        clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None, format="mp4")
+    # Extract segment from the video
+    clip_sub = clip.subclip(start_time, end_time)  # Specify the output format as '.mp4'
+    extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"
+    clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None, format="mp4")
 
+    # Send extracted segment to user
+    with open(extracted_filename, 'rb') as video:
+        bot.send_video(message.chat.id, video)
 
-        # Send extracted segment to user
-        with open(extracted_filename, 'rb') as video:
-            bot.send_video(message.chat.id, video)
+    # Ask user if the segment is acceptable
+    response = bot.send_message(message.chat.id, f"Is this segment acceptable? (Yes/No)")
 
-        # Ask user if the segment is acceptable
-        response = bot.send_message(message.chat.id, f"Is this segment acceptable? (Yes/No)")
+    # Wait for user response
+    user_response = bot.wait_for_message(message.chat.id)
 
-        # Wait for user response
-        user_response = bot.wait_for_message(message.chat.id)
+    # If user approves, break out of the loop
+    if user_response.text.lower() == 'yes':
+        bot.send_message(message.chat.id, "Segment accepted.")
+        # Ask user for custom caption
+        caption_msg = "Please provide a custom caption for the video."
+        bot.send_message(message.chat.id, caption_msg)
+        user_data[message.chat.id] = {'extracted_video': extracted_filename}
+        bot.register_next_step_handler(user_response, handle_caption)
+        break
+    else:
+        # Increment loop counter
+        loop_counter += 1
 
-        # If user approves, break out of the loop
-        if user_response.text.lower() == 'yes':
-            bot.send_message(message.chat.id, "Segment accepted.")
-            # Ask user for custom caption
-            caption_msg = "Please provide a custom caption for the video."
-            bot.send_message(message.chat.id, caption_msg)
-            user_data[message.chat.id] = {'extracted_video': extracted_filename}
-            bot.register_next_step_handler(user_response, handle_caption)
-            break
-        else:
-            # Increment loop counter
-            loop_counter += 1
+        # Update start time for next segment
+        start_time = end_time
 
-            # Update start time for next segment
-            start_time = end_time
+        # Remove temporary files
+        os.remove(extracted_filename)
 
-            # Remove temporary files
-            os.remove(extracted_filename)
 
     # If end of video reached without user approval, send a message
     if start_time >= total_duration:
