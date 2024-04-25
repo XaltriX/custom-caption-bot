@@ -51,7 +51,7 @@ def handle_video(message):
         f.write(file)
 
     try:
-        # Extract a 5-second segment and ask the user for confirmation
+        # Extract a new 5-second segment and ask the user for confirmation
         extracted_filename = extract_segment(video_filename)
         bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
 
@@ -76,8 +76,10 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            bot.send_message(message.chat.id, "Let's try another segment.")
+            # Extract a new segment and send it to the user
+            extracted_filename = extract_segment(extracted_filename)
             bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+            user_data[user_id]["extracted_filename"] = extracted_filename  # Update extracted filename in user_data
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
