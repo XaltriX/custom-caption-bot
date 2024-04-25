@@ -1,171 +1,58 @@
 import telebot
-import os
-from moviepy.editor import VideoFileClip
-from telebot import types
+import random
 
-# Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+# Initialize your Telegram bot token
+bot_token = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+bot = telebot.TeleBot(bot_token)
 
-# Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
-
-# Initialize bot
-bot = telebot.TeleBot(TOKEN)
-
-# Dictionary to store user data
-user_data = {}
-
-# Global variable to store the extracted filename
-extracted_filename = ""
-
-# Command handler to start the bot
-@bot.message_handler(commands=['start'])
-def start_message(message):
-    bot.send_message(message.chat.id, "Welcome! Please send a video.")
-
-# Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
-    global extracted_filename  # Define extracted_filename as a global variable
-    bot.send_message(message.chat.id, "Processing the video...")
+    video_file_id = message.video.file_id
+    chat_id = message.chat.id
+    bot.send_message(chat_id, "Processing video...")
 
-    # Get video file ID and download the file
-    file_id = message.video.file_id
-    file_info = bot.get_file(file_id)
+    # Function to extract a 5-second segment from the video
+    def extract_segment(video_file_id):
+        # Replace this with your video processing logic
+        return "sample_video.mp4"
 
-    # Check if file size exceeds the maximum limit
-    if file_info.file_size > MAX_FILE_SIZE_BYTES:
-        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please send a smaller video.")
-        return
+    # Extract a segment from the beginning of the video
+    sample_video_path = extract_segment(video_file_id)
 
-    file = bot.download_file(file_info.file_path)
+    # Function to send the sample video and prompt for confirmation
+    def send_sample_video(chat_id, sample_video_path):
+        caption = "@NeonGhost_Networks\nIs this sample video suitable? Please confirm."
+        msg = bot.send_video(chat_id, open(sample_video_path, 'rb'), caption=caption)
+        return msg.message_id
 
-    # Save the video file locally
-    video_filename = f"video_{file_id}.mp4"
-    with open(video_filename, 'wb') as f:
-        f.write(file)
+    # Send the sample video and prompt for confirmation
+    sample_video_msg_id = send_sample_video(chat_id, sample_video_path)
 
-    # Get video duration
-    clip = VideoFileClip(video_filename)
-    total_duration = clip.duration
+    # Function to handle user confirmation
+    def handle_confirmation(message):
+        if message.text.lower() == 'yes':
+            bot.send_message(chat_id, "Please provide custom text to be included between 🚨🚨 emojis:")
+            bot.register_next_step_handler(message, handle_custom_text)
+        elif message.text.lower() == 'no':
+            # Extract sample videos from different parts until approval
+            sample_video_path = extract_segment(video_file_id)
+            send_sample_video(chat_id, sample_video_path)
 
-    # Initialize segment duration and start time
-    segment_duration = 5
-    start_time = 0
+    # Register handler for user confirmation
+    @bot.callback_query_handler(func=lambda call: True)
+    def handle_callback_query(call):
+        if call.message.message_id == sample_video_msg_id:
+            handle_confirmation(call.message)
 
-    # Initialize loop counter
-    loop_counter = 1
+    # Function to handle custom text input
+    def handle_custom_text(message):
+        custom_text = message.text
+        bot.send_message(chat_id, "Please provide the link to be included in the caption:")
 
-    # Loop to extract and send segments until user approves or end of video reached
-    while start_time + segment_duration < total_duration:
-        bot.send_message(message.chat.id, f"Extracting segment {loop_counter}...")
+        # Further steps to complete the process...
 
-        # Calculate end time for the segment
-        end_time = min(start_time + segment_duration, total_duration)
+    # Register handler for custom text input
+    bot.register_next_step_handler(message, handle_custom_text)
 
-        # Extract segment from the video
-        clip_sub = clip.subclip(start_time, end_time)  # Specify the output format as '.mp4'
-        extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"
-        clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None)
-
-        # Send extracted segment to user
-        with open(extracted_filename, 'rb') as video:
-            bot.send_video(message.chat.id, video)
-
-        # Ask user if the segment is acceptable using inline keyboard buttons
-        response_markup = types.InlineKeyboardMarkup()
-        response_markup.row(types.InlineKeyboardButton(text="Yes", callback_data="accept"),
-                            types.InlineKeyboardButton(text="No", callback_data="reject"))
-        bot.send_message(message.chat.id, "Is this segment acceptable?", reply_markup=response_markup)
-
-        # Wait for user response
-        user_response = bot.register_next_step_handler_by_chat_id(message.chat.id, handle_user_response)
-
-        # If user approves, break out of the loop
-        if user_response and user_response.lower() == 'yes':
-            bot.send_message(message.chat.id, "Segment accepted.")
-            # Ask user for custom caption
-            caption_msg = "Please provide a custom caption for the video."
-            bot.send_message(message.chat.id, caption_msg)
-            user_data[message.chat.id] = {'extracted_video': extracted_filename}
-            bot.register_next_step_handler(user_response, handle_caption)
-            break
-        else:
-            # Increment loop counter
-            loop_counter += 1
-
-            # Update start time for next segment
-            start_time = end_time
-
-            # Remove temporary files
-            os.remove(extracted_filename)
-
-    # If end of video reached without user approval, send a message
-    if start_time >= total_duration:
-        bot.send_message(message.chat.id, "End of video reached without finding an acceptable segment.")
-
-    # Cleanup: Remove local files
-    os.remove(video_filename)
-
-
-# Handler to handle the user's response to the segment
-def handle_user_response(user_response, chat_id):
-    pass  # You can handle the user's response here if needed
-
-# Handler to handle the custom caption provided by the user
-def handle_caption(message):
-    # Retrieve user data
-    user_id = message.chat.id
-    if user_id in user_data:
-        extracted_filename = user_data[user_id]['extracted_video']
-        caption = message.text
-
-        # Add "@NeonGhost_Networks" at the beginning of the caption
-        caption_with_tag = "@NeonGhost_Networks\n" + caption
-
-        # Ask user to provide the link
-        link_msg = "Please provide a link to add in the caption."
-        bot.send_message(message.chat.id, link_msg)
-        # Store the custom caption in user_data
-        user_data[user_id]['caption'] = caption_with_tag
-        # Move to the next step
-        bot.register_next_step_handler(message, handle_link)
-    else:
-        # If user data is not found, ask the user to send a video first.
-        bot.send_message(message.chat.id, "Please send a video first.")
-
-# Handler to handle the link provided by the user
-def handle_link(message):
-    # Retrieve user data
-    user_id = message.chat.id
-    if user_id in user_data:
-        extracted_filename = user_data[user_id]['extracted_video']
-        caption = user_data[user_id]['caption']
-        link = message.text
-
-        # Format the caption with the link
-        caption_with_link = f"{caption}\n\n🔗 Video Link is Given Below:\n{link}"
-
-        # Send back the video with caption and link embedded
-        with open(extracted_filename, 'rb') as video:
-            bot.send_video(message.chat.id, video, caption=caption_with_link)
-
-        # Cleanup user_data and remove local files
-        del user_data[user_id]
-        os.remove(extracted_filename)
-    else:
-        # If user data is not found, ask the user to send a video first.
-        bot.send_message(message.chat.id, "Please send a video first.")
-
-# Handler to handle inline keyboard button callbacks
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback_query(call):
-    global extracted_filename  # Access the global extracted_filename variable
-    if call.data == "accept":
-        bot.send_message(call.message.chat.id, "You accepted the segment.")
-        user_data[call.message.chat.id] = {'extracted_video': extracted_filename}  # Store the extracted filename
-    elif call.data == "reject":
-        bot.send_message(call.message.chat.id, "You rejected the segment.")
-
-# Start polling for messages
+# Start the bot
 bot.polling()
