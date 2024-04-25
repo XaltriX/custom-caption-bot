@@ -57,5 +57,10 @@ def handle_video(message):
     # Register handler for custom text input
     bot.register_next_step_handler(message, handle_custom_text)
 
-# Start the bot
-bot.polling()
+# Start an infinite loop to keep the bot running
+while True:
+    try:
+        bot.polling(none_stop=True)
+    except Exception as e:
+        print(f"Error: {e}")
+        # Handle exceptions here as needed
