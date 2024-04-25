@@ -1,7 +1,7 @@
 import telebot
 import os
-import random
 from moviepy.editor import VideoFileClip
+from telebot import types
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -20,7 +20,6 @@ user_data = {}
 def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video.")
 
-# Handler to process the uploaded video
 # Handler to process the uploaded video
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
@@ -61,24 +60,25 @@ def handle_video(message):
         end_time = min(start_time + segment_duration, total_duration)
 
         # Extract segment from the video
-        # Extract segment from the video
-        clip_sub = clip.subclip(start_time, end_time)
+        clip_sub = clip.subclip(start_time, end_time)  # Specify the output format as '.mp4'
         extracted_filename = f"extracted_{file_id}_{loop_counter}.mp4"
         clip_sub.write_videofile(extracted_filename, codec="libx264", fps=24, logger=None)
-
 
         # Send extracted segment to user
         with open(extracted_filename, 'rb') as video:
             bot.send_video(message.chat.id, video)
 
-        # Ask user if the segment is acceptable
-        response = bot.send_message(message.chat.id, f"Is this segment acceptable? (Yes/No)")
+        # Ask user if the segment is acceptable using inline keyboard buttons
+        response_markup = types.InlineKeyboardMarkup()
+        response_markup.row(types.InlineKeyboardButton(text="Yes", callback_data="accept"),
+                            types.InlineKeyboardButton(text="No", callback_data="reject"))
+        bot.send_message(message.chat.id, "Is this segment acceptable?", reply_markup=response_markup)
 
         # Wait for user response
-        user_response = bot.wait_for_message(message.chat.id)
+        user_response = bot.register_next_step_handler_by_chat_id(message.chat.id, handle_user_response)
 
         # If user approves, break out of the loop
-        if user_response.text.lower() == 'yes':
+        if user_response.lower() == 'yes':
             bot.send_message(message.chat.id, "Segment accepted.")
             # Ask user for custom caption
             caption_msg = "Please provide a custom caption for the video."
@@ -102,7 +102,11 @@ def handle_video(message):
 
     # Cleanup: Remove local files
     os.remove(video_filename)
-    
+
+# Handler to handle the user's response to the segment
+def handle_user_response(user_response, chat_id):
+    pass  # You can handle the user's response here if needed
+
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
     # Retrieve user data
@@ -147,6 +151,14 @@ def handle_link(message):
     else:
         # If user data is not found, ask the user to send a video first.
         bot.send_message(message.chat.id, "Please send a video first.")
+
+# Handler to handle inline keyboard button callbacks
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback_query(call):
+    if call.data == "accept":
+        bot.send_message(call.message.chat.id, "You accepted the segment.")
+    elif call.data == "reject":
+        bot.send_message(call.message.chat.id, "You rejected the segment.")
 
 # Start polling for messages
 bot.polling()
