@@ -13,11 +13,8 @@ def handle_video(message):
 
     # Function to extract a 5-second segment from the video
     def extract_segment(video_file_id):
-        # Replace this with your video processing logic
+        # Placeholder logic for video processing
         return "sample_video.mp4"
-
-    # Extract a segment from the beginning of the video
-    sample_video_path = extract_segment(video_file_id)
 
     # Function to send the sample video and prompt for confirmation
     def send_sample_video(chat_id, sample_video_path):
@@ -26,6 +23,7 @@ def handle_video(message):
         return msg.message_id
 
     # Send the sample video and prompt for confirmation
+    sample_video_path = extract_segment(video_file_id)
     sample_video_msg_id = send_sample_video(chat_id, sample_video_path)
 
     # Function to handle user confirmation
@@ -48,8 +46,13 @@ def handle_video(message):
     def handle_custom_text(message):
         custom_text = message.text
         bot.send_message(chat_id, "Please provide the link to be included in the caption:")
+        bot.register_next_step_handler(message, lambda msg: handle_caption_link(msg, custom_text))
 
-        # Further steps to complete the process...
+    # Function to handle caption link input and send final caption back to user
+    def handle_caption_link(message, custom_text):
+        caption_link = message.text
+        final_caption = f"🚨🚨{custom_text}🚨🚨\nLink: {caption_link}"
+        bot.send_message(chat_id, f"Final Caption:\n{final_caption}")
 
     # Register handler for custom text input
     bot.register_next_step_handler(message, handle_custom_text)
