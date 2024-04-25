@@ -69,7 +69,9 @@ def handle_video(message):
     for idx, segment in enumerate(segments):
         segment_filename = f"segment_{idx + 1}_{file_id}.mp4"
         segment.write_videofile(segment_filename, codec="libx264", fps=24)  # Save as mp4
-        bot.send_video(message.chat.id, open(segment_filename, 'rb'))
+        bot.send_video(message.chat.id, open(segment_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+        # Store user chat ID and extracted filename in user_data
+        user_data[message.chat.id] = {"extracted_filename": segment_filename}
         os.remove(segment_filename)
 
     # Cleanup files
