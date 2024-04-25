@@ -95,7 +95,7 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link
-        formatted_caption = f"@NeonGhost_Networks\n\n🚨{caption}🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
+        formatted_caption = f"@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
 
         # Send back the video with caption and link embedded
         try:
