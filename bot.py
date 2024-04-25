@@ -15,37 +15,33 @@ bot = telebot.TeleBot(TOKEN)
 # Dictionary to store user data
 user_data = {}
 
-# Function to extract a 5-second segment from the video
-def extract_segment(video_filename):
+# Function to extract segments from the video
+def extract_segments(video_filename):
     clip = VideoFileClip(video_filename)
     duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-    
-    # List to store start times
-    start_times = []
-    
-    # Add start time from the beginning
-    start_times.append(0)
-    
-    # Add start time from the middle
-    start_times.append(max(clip.duration / 2 - duration / 2, 0))
-    
-    # Add start time from the ending
-    start_times.append(max(clip.duration - duration, 0))
-    
-    # Add start time from randomly anywhere
-    start_times.append(random.uniform(0, max(clip.duration - duration, 0)))
-    
-    for start_time in start_times:
-        end_time = min(start_time + duration, clip.duration)  # End time for segment
-        segment = clip.subclip(start_time, end_time)
-        extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-        try:
-            segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
-            return extracted_filename
-        except BrokenPipeError:
-            pass
-    
-    raise Exception("Error occurred while processing the video segment.")
+    total_duration = clip.duration
+
+    # Start from beginning
+    start_segment = clip.subclip(0, duration)
+
+    # Start from middle
+    middle_start_time = max((total_duration - duration) / 2, 0)
+    middle_segment = clip.subclip(middle_start_time, middle_start_time + duration)
+
+    # Start from end
+    end_segment = clip.subclip(total_duration - duration, total_duration)
+
+    # Random segment
+    random_start_time = random.uniform(0, total_duration - duration)
+    random_segment = clip.subclip(random_start_time, random_start_time + duration)
+
+    return [start_segment, middle_segment, end_segment, random_segment]
+
+# Keyboard markup for confirmation
+def confirmation_keyboard():
+    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2)
+    keyboard.add(telebot.types.KeyboardButton("Yes"), telebot.types.KeyboardButton("No"))
+    return keyboard
 
 # Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
@@ -68,20 +64,18 @@ def handle_video(message):
     with open(video_filename, 'wb') as f:
         f.write(file)
 
-    # Extract a 5-second segment and ask the user for confirmation
-    extracted_filename = extract_segment(video_filename)
-    bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+    # Extract segments and send one at a time
+    segments = extract_segments(video_filename)
+    for idx, segment in enumerate(segments):
+        segment_filename = f"segment_{idx + 1}_{file_id}.mp4"
+        segment.write_videofile(segment_filename, codec="libx264", fps=24)  # Save as mp4
+        bot.send_video(message.chat.id, open(segment_filename, 'rb'))
+        os.remove(segment_filename)
 
-    # Store user chat ID and extracted filename in user_data
-    user_data[message.chat.id] = {"extracted_filename": extracted_filename}
+    # Cleanup files
+    os.remove(video_filename)
 
-# Keyboard markup for confirmation
-def confirmation_keyboard():
-    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2)
-    keyboard.add(telebot.types.KeyboardButton("Yes"), telebot.types.KeyboardButton("No"))
-    return keyboard
-
-# Handler to process confirmation of the video segment
+# Handler to handle confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
 def handle_confirmation(message):
     user_id = message.chat.id
@@ -92,7 +86,13 @@ def handle_confirmation(message):
             bot.register_next_step_handler(message, handle_caption)
         else:
             bot.send_message(message.chat.id, "Let's try another segment.")
-            bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+            # Remove the current extracted file
+            os.remove(extracted_filename)
+            # Extract a new segment and send it for confirmation
+            new_extracted_filename = extract_segment(video_filename)
+            bot.send_video(message.chat.id, open(new_extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+            # Update user_data with the new filename
+            user_data[user_id]["extracted_filename"] = new_extracted_filename
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
