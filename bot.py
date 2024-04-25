@@ -23,7 +23,10 @@ def extract_segment(video_filename):
     end_time = min(start_time + duration, clip.duration)  # End time for segment
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-    segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+    try:
+        segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+    except BrokenPipeError:
+        raise Exception("Error occurred while processing the video segment.")
     return extracted_filename
 
 # Handler to start the bot and process videos
