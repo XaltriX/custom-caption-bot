@@ -4,7 +4,7 @@ import random
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
 # Maximum allowed file size in bytes (adjust as needed)
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -94,8 +94,8 @@ def handle_link(message):
         caption = user_data[user_id]["caption"]
         link = message.text
 
-        # Format the caption with the link and custom text between emojis
-        formatted_caption = f"@NeonGhost_Networks\n\n{caption}\n\n🚨 {link} 🚨"
+        # Format the caption with the link
+        formatted_caption = f"@NeonGhost_Networks\n\n🚨{caption}🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
 
         # Send back the video with caption and link embedded
         try:
