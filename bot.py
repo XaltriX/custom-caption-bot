@@ -44,6 +44,7 @@ def confirmation_keyboard():
     return keyboard
 
 # Handler to start the bot and process videos
+# Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
 def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video🤝")
@@ -70,16 +71,13 @@ def handle_video(message):
         segment_filename = f"segment_{idx + 1}_{file_id}.mp4"
         segment.write_videofile(segment_filename, codec="libx264", fps=24)  # Save as mp4
         bot.send_video(message.chat.id, open(segment_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-        # Store user chat ID and extracted filename in user_data
-        user_data[message.chat.id] = {"extracted_filename": segment_filename}
+        # Store user chat ID, extracted filename, and video filename in user_data
+        user_data[message.chat.id] = {"extracted_filename": segment_filename, "video_filename": video_filename}
         os.remove(segment_filename)
 
     # Cleanup files
-    os.remove(video_filename)
+    # os.remove(video_filename)  # Commented out to retain the original video file
 
-# Handler to handle confirmation of the video segment
-# Handler to handle confirmation of the video segment
-# Handler to handle confirmation of the video segment
 # Handler to handle confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
 def handle_confirmation(message):
@@ -91,15 +89,10 @@ def handle_confirmation(message):
             bot.register_next_step_handler(message, handle_caption)
         elif message.text.lower() == "no":
             bot.send_message(message.chat.id, "Let's try another segment.")
-            # Remove the current extracted file if it exists
-            if os.path.exists(extracted_filename):
-                os.remove(extracted_filename)
-            else:
-                bot.send_message(message.chat.id, "The file to be removed does not exist.")
-            
+            # Remove the current extracted file
+            os.remove(extracted_filename)
             # Extract a new segment and send it for confirmation
-            video_filename = user_data[user_id]["video_filename"]  # Get the video filename
-            segments = extract_segments(video_filename)
+            segments = extract_segments(user_data[user_id]["video_filename"])
             new_segment = random.choice(segments)
             new_segment_filename = f"new_segment_{file_id}.mp4"
             new_segment.write_videofile(new_segment_filename, codec="libx264", fps=24)  # Save as mp4
@@ -110,7 +103,6 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Please respond with 'Yes' or 'No'.")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
-
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
