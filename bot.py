@@ -5,8 +5,7 @@ from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
-
-# Maximum allowed file size in bytes (adjust as needed)
+# Maximum allowed file size in bytes
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 # Initialize bot
@@ -19,15 +18,32 @@ user_data = {}
 def extract_segment(video_filename):
     clip = VideoFileClip(video_filename)
     duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-    start_time = random.uniform(0, max(clip.duration - duration, 0))  # Start time for segment
-    end_time = min(start_time + duration, clip.duration)  # End time for segment
-    segment = clip.subclip(start_time, end_time)
-    extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-    try:
-        segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
-    except BrokenPipeError:
-        raise Exception("Error occurred while processing the video segment.")
-    return extracted_filename
+    
+    # List to store start times
+    start_times = []
+    # Add start time from the beginning
+    start_times.append(0)
+    # Add start time from the middle
+    start_times.append(max(clip.duration / 2 - duration / 2, 0))
+    # Add start time from the ending
+    start_times.append(max(clip.duration - duration, 0))
+    # Add start time from randomly anywhere
+    start_times.append(random.uniform(0, max(clip.duration - duration, 0)))
+    
+    # Shuffle the start times to select randomly
+    random.shuffle(start_times)
+    
+    for start_time in start_times:
+        end_time = min(start_time + duration, clip.duration)  # End time for segment
+        segment = clip.subclip(start_time, end_time)
+        extracted_filename = f"extracted_{os.path.basename(video_filename)}"
+        try:
+            segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+            return extracted_filename
+        except BrokenPipeError:
+            pass
+    
+    raise Exception("Error occurred while processing the video segment.")
 
 # Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
