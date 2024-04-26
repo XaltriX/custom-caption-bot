@@ -79,17 +79,26 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            # Extract a segment from the end of the video
-            if end_time + 5 <= VideoFileClip(extracted_filename).duration:
+            # Extract a new segment
+            clip_duration = VideoFileClip(extracted_filename).duration
+            if end_time + 5 <= clip_duration:
                 new_start = end_time
-                new_end = min(new_start + 5, VideoFileClip(extracted_filename).duration)
+                new_end = min(new_start + 5, clip_duration)
+                extracted_filename = extract_segment(extracted_filename, new_start, new_end)
+                bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+                user_data[user_id]["extracted_filename"] = extracted_filename
+                user_data[user_id]["start_time"] = new_start
+                user_data[user_id]["end_time"] = new_end
+            elif start_time - 5 >= 0:
+                new_end = start_time
+                new_start = max(new_end - 5, 0)
                 extracted_filename = extract_segment(extracted_filename, new_start, new_end)
                 bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
                 user_data[user_id]["extracted_filename"] = extracted_filename
                 user_data[user_id]["start_time"] = new_start
                 user_data[user_id]["end_time"] = new_end
             else:
-                bot.send_message(message.chat.id, "Sorry, we've reached the end of the video. Please send another one.")
+                bot.send_message(message.chat.id, "Sorry, we've reached the limit. Please send another video.")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
