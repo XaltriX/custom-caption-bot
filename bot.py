@@ -12,15 +12,9 @@ MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
-# Dictionary to store user data
-user_data = {}
-
-# Function to extract a 5-second segment from the video
-def extract_segment(video_filename):
+# Function to extract a segment from the video based on the start and end times
+def extract_segment(video_filename, start_time, end_time):
     clip = VideoFileClip(video_filename)
-    duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-    start_time = random.uniform(0, max(clip.duration - duration, 0))  # Start time for segment
-    end_time = min(start_time + duration, clip.duration)  # End time for segment
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
     try:
@@ -28,6 +22,9 @@ def extract_segment(video_filename):
     except BrokenPipeError:
         raise Exception("Error occurred while processing the video segment.")
     return extracted_filename
+
+# Dictionary to store user data
+user_data = {}
 
 # Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
@@ -39,7 +36,7 @@ def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
     file_id = message.video.file_id
     file_info = bot.get_file(file_id)
-    
+
     if file_info.file_size > MAX_FILE_SIZE_BYTES:
         bot.send_message(message.chat.id, "Sorry, the file size is too large. Please try with a smaller video.")
         return
@@ -51,12 +48,16 @@ def handle_video(message):
         f.write(file)
 
     try:
-        # Extract a new 5-second segment and ask the user for confirmation
-        extracted_filename = extract_segment(video_filename)
+        # Extract a segment from the middle of the video
+        middle_start = random.uniform(0.25, 0.5) * VideoFileClip(video_filename).duration
+        middle_end = min(middle_start + 5, VideoFileClip(video_filename).duration)
+        extracted_filename = extract_segment(video_filename, middle_start, middle_end)
+
+        # Ask the user for confirmation
         bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
 
-        # Store user chat ID and extracted filename in user_data
-        user_data[message.chat.id] = {"extracted_filename": extracted_filename}
+        # Store user chat ID, extracted filename, and start/end times in user_data
+        user_data[message.chat.id] = {"extracted_filename": extracted_filename, "start_time": middle_start, "end_time": middle_end}
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
@@ -68,18 +69,27 @@ def confirmation_keyboard():
 
 # Handler to process confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
-def handle_confirmation(message):
+defhandle_confirmation(message):
     user_id = message.chat.id
     if user_id in user_data:
         extracted_filename = user_data[user_id]["extracted_filename"]
+        start_time = user_data[user_id]["start_time"]
+        end_time = user_data[user_id]["end_time"]
         if message.text.lower() == "yes":
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            # Extract a new segment and send it to the user
-            extracted_filename = extract_segment(extracted_filename)
-            bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-            user_data[user_id]["extracted_filename"] = extracted_filename  # Update extracted filename in user_data
+            # Extract a segment from the end of the video
+            if end_time + 5 <= VideoFileClip(extracted_filename).duration:
+                new_start = end_time
+                new_end = min(new_start + 5, VideoFileClip(extracted_filename).duration)
+                extracted_filename = extract_segment(extracted_filename, new_start, new_end)
+                bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+                user_data[user_id]["extracted_filename"] = extracted_filename
+                user_data[user_id]["start_time"] = new_start
+                user_data[user_id]["end_time"] = new_end
+            else:
+                bot.send_message(message.chat.id, "Sorry, we've reached the end of the video. Please send another one.")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
