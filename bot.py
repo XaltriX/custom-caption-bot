@@ -18,8 +18,8 @@ def extract_segment(video_filename, start_time, end_time):
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
     try:
         segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
-    except BrokenPipeError:
-        raise Exception("Error occurred while processing the video segment.")
+    except Exception as e:
+        raise e
     return extracted_filename
 
 # Dictionary to store user data
@@ -78,18 +78,17 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            # Extract a segment from the end of the video
-            if end_time + 5 <= VideoFileClip(extracted_filename).duration:
-                new_start = end_time
-                new_end = min(new_start + 5, VideoFileClip(extracted_filename).duration)
-                extracted_filename = extract_segment(extracted_filename, new_start, new_end)
+            try:
+                # Extract a segment from the end of the video
+                end_start = max(0, VideoFileClip(extracted_filename).duration - 5)
+                end_end = VideoFileClip(extracted_filename).duration
+                extracted_filename = extract_segment(extracted_filename, end_start, end_end)
                 bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
                 user_data[user_id]["extracted_filename"] = extracted_filename
-                user_data[user_id]["start_time"] = new_start
-                user_data[user_id]["end_time"] = new_end
-            else:
-                bot.send_message(message.chat.id, "Sorry, we've reached the end of the video. Please choose from the options below.")
-                bot.send_message(message.chat.id, "1. Middle segment\n2. End segment")
+                user_data[user_id]["start_time"] = end_start
+                user_data[user_id]["end_time"] = end_end
+            except Exception as e:
+                bot.send_message(message.chat.id, f"Sorry, there was an error processing your request: {e}")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
