@@ -1,6 +1,5 @@
 import telebot
 import os
-import random
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
@@ -15,27 +14,14 @@ bot = telebot.TeleBot(TOKEN)
 # Function to extract a segment from the video based on the start and end times
 def extract_segment(video_filename, start_time, end_time):
     clip = VideoFileClip(video_filename)
-
-    # Check if start_time and end_time are valid
-    if start_time < 0 or end_time > clip.duration or start_time > end_time:
-        print(f"Error: Invalid start_time ({start_time}) or end_time ({end_time})")
-        return None
-
-    # Create the subclip and check if it was created successfully
-    segment = None
-    try:
-        segment = clip.subclip(start_time, end_time)
-    except Exception as e:
-        print(f"Error: Failed to create subclip from {start_time} to {end_time}: {e}")
-
+    segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-    if segment is not None:
-        try:
-            segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
-        except BrokenPipeError:
-            raise Exception("Error occurred while processing the video segment.")
-
+    try:
+        segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+    except BrokenPipeError:
+        raise Exception("Error occurred while processing the video segment.")
     return extracted_filename
+
 # Dictionary to store user data
 user_data = {}
 
@@ -62,7 +48,7 @@ def handle_video(message):
 
     try:
         # Extract a segment from the middle of the video
-        middle_start = random.uniform(0.25, 0.5) * VideoFileClip(video_filename).duration
+        middle_start = 0.25 * VideoFileClip(video_filename).duration
         middle_end = min(middle_start + 5, VideoFileClip(video_filename).duration)
         extracted_filename = extract_segment(video_filename, middle_start, middle_end)
 
@@ -92,26 +78,18 @@ def handle_confirmation(message):
             bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
             bot.register_next_step_handler(message, handle_caption)
         else:
-            # Extract a new segment
-            clip_duration = VideoFileClip(extracted_filename).duration
-            if end_time + 5 <= clip_duration:
+            # Extract a segment from the end of the video
+            if end_time + 5 <= VideoFileClip(extracted_filename).duration:
                 new_start = end_time
-                new_end = min(new_start + 5, clip_duration)
-                extracted_filename = extract_segment(extracted_filename, new_start, new_end)
-                bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-                user_data[user_id]["extracted_filename"] = extracted_filename
-                user_data[user_id]["start_time"] = new_start
-                user_data[user_id]["end_time"] = new_end
-            elif start_time - 5 >= 0:
-                new_end = start_time
-                new_start = max(new_end - 5, 0)
+                new_end = min(new_start + 5, VideoFileClip(extracted_filename).duration)
                 extracted_filename = extract_segment(extracted_filename, new_start, new_end)
                 bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
                 user_data[user_id]["extracted_filename"] = extracted_filename
                 user_data[user_id]["start_time"] = new_start
                 user_data[user_id]["end_time"] = new_end
             else:
-                bot.send_message(message.chat.id, "Sorry, we've reached the limit. Please send another video.")
+                bot.send_message(message.chat.id, "Sorry, we've reached the end of the video. Please choose from the options below.")
+                bot.send_message(message.chat.id, "1. Middle segment\n2. End segment")
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
 
