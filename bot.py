@@ -69,7 +69,7 @@ def confirmation_keyboard():
 
 # Handler to process confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
-defhandle_confirmation(message):
+def handle_confirmation(message):
     user_id = message.chat.id
     if user_id in user_data:
         extracted_filename = user_data[user_id]["extracted_filename"]
