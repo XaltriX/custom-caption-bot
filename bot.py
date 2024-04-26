@@ -1,6 +1,5 @@
 import telebot
 import os
-import requests
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
@@ -26,92 +25,51 @@ def extract_middle_segment(video_filename):
         raise e
     return extracted_filename
 
-# Function to download the first 14 MB of the video
-def download_partial_video(file_id):
-    file_info = bot.get_file(file_id)
-    file_path = file_info.file_path
-    url = f'https://api.telegram.org/file/bot{TOKEN}/{file_path}'
-    headers = {'Range': 'bytes=0-14680064'}  # Range for the first 14 MB (14 * 1024 * 1024)
-    response = requests.get(url, headers=headers)
-    return response.content
-
-# Dictionary to store user data
-user_data = {}
-
 # Handler to start the bot and process videos
-@bot.message_handler(commands=['start'])
-def start_message(message):
-    bot.send_message(message.chat.id, "Welcome! Please send a video🤝")
-
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
-
-    # Ensure the file size is within the allowed limit
-    if message.video.file_size > MAX_FILE_SIZE_BYTES:
-        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please send a smaller video.")
-        return
-
     file_id = message.video.file_id
+    file_info = bot.get_file(file_id)
 
+    if file_info.file_size > MAX_FILE_SIZE_BYTES:
+        bot.send_message(message.chat.id, "The file size is too large. Downloading the first 14 MB...")
+        file_data = download_partial_video(file_id)
+        with open(file_data['file_path'], 'rb') as video_file:
+            bot.send_video(message.chat.id, video_file)
+        os.remove(file_data['file_path'])  # Delete the downloaded file after use
+    else:
+        bot.send_message(message.chat.id, "File size is within limits. Processing as usual...")
+        process_video(file_info, message.chat.id)
+
+# Function to download the first 14 MB of a large video file
+def download_partial_video(file_id):
+    file_info = bot.get_file(file_id)
+    with bot.download_file(file_info.file_path, limit=14*1024*1024) as file_data:
+        return file_data
+
+# Function to process the video (extracting a middle segment)
+def process_video(file_info, chat_id):
+    file = bot.download_file(file_info.file_path)
+    video_filename = f"video_{file_info.file_id}.mp4"
+    with open(video_filename, 'wb') as f:
+        f.write(file)
     try:
-        # Download the first 14 MB of the video file
-        video_data = download_partial_video(file_id)
-
-        video_filename = f"video_{file_id}.mp4"
-        with open(video_filename, 'wb') as f:
-            f.write(video_data)
-
         # Extract the middle segment from the video
         middle_segment = extract_middle_segment(video_filename)
-
         # Send the extracted middle segment to the user
         with open(middle_segment, 'rb') as video_file:
-            bot.send_video(message.chat.id, video_file)
-
-        # Ask the user to provide a custom caption
-        bot.send_message(message.chat.id, "Please provide a custom caption for the video:")
-        user_data[message.chat.id] = {"middle_segment": middle_segment}
-        bot.register_next_step_handler(message, handle_caption)
+            # Add custom caption and link
+            caption = "Check out this amazing video!"
+            link = "https://example.com"
+            formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
+            bot.send_video(chat_id, video_file, caption=formatted_caption)
     except Exception as e:
-        bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
-
-# Rest of the code remains the same...
-        
-# Handler to handle the custom caption provided by the user
-def handle_caption(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        caption = message.text
-        user_data[user_id]["caption"] = caption
-        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
-        bot.register_next_step_handler(message, handle_link)
-    else:
-        bot.send_message(message.chat.id, "Please send a video first.")
-
-# Handler to handle the link provided by the user
-def handle_link(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        link = message.text
-        middle_segment = user_data[user_id]["middle_segment"]
-        caption = user_data[user_id]["caption"]
-
-        # Format the caption with the additional text and the provided link
-        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
-
-        # Send back the middle segment with the custom caption and link
-        try:
-            with open(middle_segment, 'rb') as video:
-                bot.send_video(user_id, video, caption=formatted_caption)
-        except FileNotFoundError:
-            bot.send_message(user_id, "Sorry, there was an error processing your request.")
-        finally:
-            # Cleanup user_data and remove local files
-            os.remove(middle_segment)
-            del user_data[user_id]
-    else:
-        bot.send_message(message.chat.id, "Please send a video first.")
+        bot.send_message(chat_id, f"Sorry, there was an error processing your video: {e}")
+    finally:
+        # Cleanup local files
+        os.remove(video_filename)
+        os.remove(middle_segment)
 
 # Start polling for messages
 bot.polling()
