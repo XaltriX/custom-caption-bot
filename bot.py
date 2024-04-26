@@ -7,6 +7,7 @@ TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_DOWNLOAD_SIZE_BYTES = 14 * 1024 * 1024  # 14 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -43,7 +44,9 @@ def handle_video(message):
         bot.send_message(message.chat.id, "Sorry, the file size is too large. Please try with a smaller video.")
         return
 
-    file = bot.download_file(file_info.file_path)
+    # Download the video file
+    file_size = min(file_info.file_size, MAX_DOWNLOAD_SIZE_BYTES)
+    file = bot.download_file(file_info.file_path, limit=file_size)
     video_filename = f"video_{file_id}.mp4"
 
     with open(video_filename, 'wb') as f:
