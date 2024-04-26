@@ -47,50 +47,47 @@ def handle_video(message):
         f.write(file)
 
     try:
-        # Extract a segment from the middle of the video
-        middle_start = 0.25 * VideoFileClip(video_filename).duration
-        middle_end = min(middle_start + 5, VideoFileClip(video_filename).duration)
-        extracted_filename = extract_segment(video_filename, middle_start, middle_end)
+        # Extract segments from the video: starting, middle, and end
+        duration = VideoFileClip(video_filename).duration
+        start_segment = extract_segment(video_filename, 0, min(duration, 5))
+        middle_segment = extract_segment(video_filename, max(0.25 * duration, 0), min(0.5 * duration, duration))
+        end_segment = extract_segment(video_filename, max(duration - 5, 0), duration)
 
-        # Ask the user for confirmation
-        bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-
-        # Store user chat ID, extracted filename, and start/end times in user_data
-        user_data[message.chat.id] = {"extracted_filename": extracted_filename, "start_time": middle_start, "end_time": middle_end}
+        # Ask the user to choose a segment
+        bot.send_message(message.chat.id, "Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
+        user_data[message.chat.id] = {"start_segment": start_segment, "middle_segment": middle_segment, "end_segment": end_segment}
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
-# Keyboard markup for confirmation
-def confirmation_keyboard():
-    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2)
-    keyboard.add(telebot.types.KeyboardButton("Yes"), telebot.types.KeyboardButton("No"))
-    return keyboard
-
-# Handler to process confirmation of the video segment
+# Handler to process user's segment choice
 @bot.message_handler(func=lambda message: True)
-def handle_confirmation(message):
+def handle_segment_choice(message):
     user_id = message.chat.id
     if user_id in user_data:
-        extracted_filename = user_data[user_id]["extracted_filename"]
-        start_time = user_data[user_id]["start_time"]
-        end_time = user_data[user_id]["end_time"]
-        if message.text.lower() == "yes":
-            bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
-            bot.register_next_step_handler(message, handle_caption)
-        else:
-            try:
-                # Extract a segment from the end of the video
-                end_start = max(0, VideoFileClip(extracted_filename).duration - 5)
-                end_end = VideoFileClip(extracted_filename).duration
-                extracted_filename = extract_segment(extracted_filename, end_start, end_end)
-                bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-                user_data[user_id]["extracted_filename"] = extracted_filename
-                user_data[user_id]["start_time"] = end_start
-                user_data[user_id]["end_time"] = end_end
-            except Exception as e:
-                bot.send_message(message.chat.id, f"Sorry, there was an error processing your request: {e}")
+        try:
+            choice = int(message.text)
+            if choice in [1, 2, 3]:
+                segment_key = ""
+                if choice == 1:
+                    segment_key = "start_segment"
+                elif choice == 2:
+                    segment_key = "middle_segment"
+                else:
+                    segment_key = "end_segment"
+
+                extracted_filename = user_data[user_id][segment_key]
+                bot.send_message(user_id, f"You've chosen segment {choice}. Processing...")
+
+                # Ask for custom caption and link
+                bot.send_message(user_id, "Please provide a custom caption for the video:")
+                user_data[user_id]["segment_filename"] = extracted_filename
+                bot.register_next_step_handler(message, handle_caption)
+            else:
+                bot.send_message(user_id, "Invalid choice. Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
+        except ValueError:
+            bot.send_message(user_id, "Invalid choice. Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
     else:
-        bot.send_message(message.chat.id, "Please send a video first.")
+        bot.send_message(user_id, "Please send a video first.")
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
@@ -107,11 +104,11 @@ def handle_caption(message):
 def handle_link(message):
     user_id = message.chat.id
     if user_id in user_data:
-        extracted_filename = user_data[user_id]["extracted_filename"]
+        extracted_filename = user_data[user_id]["segment_filename"]
         caption = user_data[user_id]["caption"]
         link = message.text
 
-        # Format the caption with the link
+        # Format the caption with the link and additional text
         formatted_caption = f"@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
 
         # Send back the video with caption and link embedded
