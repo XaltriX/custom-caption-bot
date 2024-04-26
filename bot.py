@@ -60,21 +60,33 @@ def handle_video(message):
         # Ask the user to provide a custom caption
         bot.send_message(message.chat.id, "Please provide a custom caption for the video:")
         user_data[message.chat.id] = {"middle_segment": middle_segment}
+        bot.register_next_step_handler(message, handle_caption)
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
 # Handler to handle the custom caption provided by the user
-@bot.message_handler(func=lambda message: True)
 def handle_caption(message):
     user_id = message.chat.id
     if user_id in user_data:
         caption = message.text
+        user_data[user_id]["caption"] = caption
+        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
+        bot.register_next_step_handler(message, handle_link)
+    else:
+        bot.send_message(message.chat.id, "Please send a video first.")
+
+# Handler to handle the link provided by the user
+def handle_link(message):
+    user_id = message.chat.id
+    if user_id in user_data:
+        link = message.text
         middle_segment = user_data[user_id]["middle_segment"]
+        caption = user_data[user_id]["caption"]
 
-        # Format the caption with the additional text
-        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨"
+        # Format the caption with the additional text and the provided link
+        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
 
-        # Send back the middle segment with the custom caption
+        # Send back the middle segment with the custom caption and link
         try:
             with open(middle_segment, 'rb') as video:
                 bot.send_video(user_id, video, caption=formatted_caption)
