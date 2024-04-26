@@ -1,5 +1,6 @@
 import telebot
 import os
+import requests
 from moviepy.editor import VideoFileClip
 
 # Your Telegram Bot API token
@@ -10,16 +11,6 @@ MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
-
-# Function to download the first 14 MB of the video file
-def download_partial_video(file_id):
-    file_info = bot.get_file(file_id)
-    file_size = file_info.file_size
-    max_size = min(MAX_FILE_SIZE_BYTES, file_size)
-    file_path = file_info.file_path
-
-    with bot.download_file(file_path, limit=max_size) as file_data:
-        return file_data
 
 # Function to extract a 5-second segment from the middle of the video
 def extract_middle_segment(video_filename):
@@ -35,6 +26,15 @@ def extract_middle_segment(video_filename):
         raise e
     return extracted_filename
 
+# Function to download the first 14 MB of the video
+def download_partial_video(file_id):
+    file_info = bot.get_file(file_id)
+    file_path = file_info.file_path
+    url = f'https://api.telegram.org/file/bot{TOKEN}/{file_path}'
+    headers = {'Range': 'bytes=0-14680064'}  # Range for the first 14 MB (14 * 1024 * 1024)
+    response = requests.get(url, headers=headers)
+    return response.content
+
 # Dictionary to store user data
 user_data = {}
 
@@ -47,15 +47,21 @@ def start_message(message):
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
 
-    # Download the first 14 MB of the video
-    file_id = message.video.file_id
-    file_data = download_partial_video(file_id)
-    video_filename = f"video_{file_id}.mp4"
+    # Ensure the file size is within the allowed limit
+    if message.video.file_size > MAX_FILE_SIZE_BYTES:
+        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please send a smaller video.")
+        return
 
-    with open(video_filename, 'wb') as f:
-        f.write(file_data.read())
+    file_id = message.video.file_id
 
     try:
+        # Download the first 14 MB of the video file
+        video_data = download_partial_video(file_id)
+
+        video_filename = f"video_{file_id}.mp4"
+        with open(video_filename, 'wb') as f:
+            f.write(video_data)
+
         # Extract the middle segment from the video
         middle_segment = extract_middle_segment(video_filename)
 
@@ -69,6 +75,8 @@ def handle_video(message):
         bot.register_next_step_handler(message, handle_caption)
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
+
+# Rest of the code remains the same...
         
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
