@@ -15,14 +15,27 @@ bot = telebot.TeleBot(TOKEN)
 # Function to extract a segment from the video based on the start and end times
 def extract_segment(video_filename, start_time, end_time):
     clip = VideoFileClip(video_filename)
-    segment = clip.subclip(start_time, end_time)
-    extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-    try:
-        segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
-    except BrokenPipeError:
-        raise Exception("Error occurred while processing the video segment.")
-    return extracted_filename
 
+    # Check if start_time and end_time are valid
+    if start_time < 0 or end_time > clip.duration or start_time > end_time:
+        print(f"Error: Invalid start_time ({start_time}) or end_time ({end_time})")
+        return None
+
+    # Create the subclip and check if it was created successfully
+    segment = None
+    try:
+        segment = clip.subclip(start_time, end_time)
+    except Exception as e:
+        print(f"Error: Failed to create subclip from {start_time} to {end_time}: {e}")
+
+    extracted_filename = f"extracted_{os.path.basename(video_filename)}"
+    if segment is not None:
+        try:
+            segment.write_videofile(extracted_filename, codec="libx264", fps=24)  # Save as mp4
+        except BrokenPipeError:
+            raise Exception("Error occurred while processing the video segment.")
+
+    return extracted_filename
 # Dictionary to store user data
 user_data = {}
 
