@@ -53,6 +53,14 @@ def handle_video(message):
         middle_segment = extract_segment(video_filename, max(0.25 * duration, 0), min(0.5 * duration, duration))
         end_segment = extract_segment(video_filename, max(duration - 5, 0), duration)
 
+        # Send the extracted segments to the user
+        with open(start_segment, 'rb') as video_file:
+            bot.send_video(message.chat.id, video_file)
+        with open(middle_segment, 'rb') as video_file:
+            bot.send_video(message.chat.id, video_file)
+        with open(end_segment, 'rb') as video_file:
+            bot.send_video(message.chat.id, video_file)
+
         # Ask the user to choose a segment
         bot.send_message(message.chat.id, "Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
         user_data[message.chat.id] = {"start_segment": start_segment, "middle_segment": middle_segment, "end_segment": end_segment}
