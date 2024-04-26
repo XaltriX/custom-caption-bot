@@ -11,9 +11,12 @@ MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
-# Function to extract a segment from the video based on the start and end times
-def extract_segment(video_filename, start_time, end_time):
+# Function to extract a 5-second segment from the middle of the video
+def extract_middle_segment(video_filename):
     clip = VideoFileClip(video_filename)
+    duration = clip.duration
+    start_time = max(0, duration / 2 - 2.5)  # Start 2.5 seconds before the middle
+    end_time = min(duration, duration / 2 + 2.5)  # End 2.5 seconds after the middle
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
     try:
@@ -47,90 +50,39 @@ def handle_video(message):
         f.write(file)
 
     try:
-        # Extract segments from the video: starting, middle, and end
-        clip = VideoFileClip(video_filename)
-        duration = clip.duration
-        start_segment = extract_segment(video_filename, 0, min(duration, 5))
-        middle_segment = extract_segment(video_filename, max(0.25 * duration, 0), min(0.5 * duration, duration))
-        end_segment = extract_segment(video_filename, max(duration - 5, 0), duration)
+        # Extract the middle segment from the video
+        middle_segment = extract_middle_segment(video_filename)
 
-        # Send the extracted segments to the user
-        with open(start_segment, 'rb') as video_file:
-            bot.send_video(message.chat.id, video_file)
+        # Send the extracted middle segment to the user
         with open(middle_segment, 'rb') as video_file:
             bot.send_video(message.chat.id, video_file)
-        with open(end_segment, 'rb') as video_file:
-            bot.send_video(message.chat.id, video_file)
 
-        # Ask the user to choose a segment
-        bot.send_message(message.chat.id, "Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
-        user_data[message.chat.id] = {"start_segment": start_segment, "middle_segment": middle_segment, "end_segment": end_segment}
+        # Ask the user to provide a custom caption
+        bot.send_message(message.chat.id, "Please provide a custom caption for the video:")
+        user_data[message.chat.id] = {"middle_segment": middle_segment}
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
-# Handler to process user's segment choice
-@bot.message_handler(func=lambda message: True)
-def handle_segment_choice(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        try:
-            choice = int(message.text)
-            if choice in [1, 2, 3]:
-                segment_key = ""
-                if choice == 1:
-                    segment_key = "start_segment"
-                elif choice == 2:
-                    segment_key = "middle_segment"
-                else:
-                    segment_key = "end_segment"
-
-                extracted_filename = user_data[user_id][segment_key]
-                bot.send_message(user_id, f"You've chosen segment {choice}. Processing...")
-
-                # Update user_data with the correct segment filename
-                user_data[user_id]["segment_filename"] = extracted_filename
-
-                # Ask for custom caption and link
-                bot.send_message(user_id, "Please provide a custom caption for the video:")
-                bot.register_next_step_handler(message, handle_caption)
-            else:
-                bot.send_message(user_id, "Invalid choice. Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
-        except ValueError:
-            bot.send_message(user_id, "Invalid choice. Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
-    else:
-        bot.send_message(user_id, "Please send a video first.")
-
 # Handler to handle the custom caption provided by the user
+@bot.message_handler(func=lambda message: True)
 def handle_caption(message):
     user_id = message.chat.id
     if user_id in user_data:
         caption = message.text
-        user_data[user_id]["caption"] = caption
-        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
-        bot.register_next_step_handler(message, handle_link)
-    else:
-        bot.send_message(message.chat.id, "Please send a video first.")
+        middle_segment = user_data[user_id]["middle_segment"]
 
-# Handler to handle the link provided by the user
-def handle_link(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        extracted_filename = user_data[user_id]["segment_filename"]
-        caption = user_data[user_id]["caption"]
-        link = message.text
+        # Format the caption with the additional text
+        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨"
 
-        # Format the caption with the link and additional text
-        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
-
-        # Send back the video with caption and link embedded
+        # Send back the middle segment with the custom caption
         try:
-            with open(extracted_filename, 'rb') as video:
+            with open(middle_segment, 'rb') as video:
                 bot.send_video(user_id, video, caption=formatted_caption)
         except FileNotFoundError:
             bot.send_message(user_id, "Sorry, there was an error processing your request.")
         finally:
             # Cleanup user_data and remove local files
-            os.remove(extracted_filename)
+            os.remove(middle_segment)
             del user_data[user_id]
     else:
         bot.send_message(message.chat.id, "Please send a video first.")
