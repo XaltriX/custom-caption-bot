@@ -34,19 +34,22 @@ user_data = {}
 def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video🤝")
 
+# Handler to process videos sent by the user
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
     file_id = message.video.file_id
     file_info = bot.get_file(file_id)
 
+    # Check if the file size exceeds the maximum allowed size
     if file_info.file_size > MAX_FILE_SIZE_BYTES:
-        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please try with a smaller video.")
-        return
+        bot.send_message(message.chat.id, "The file size is too large. Downloading the first 14 MB...")
+        # Download only the first 14 MB of the video file
+        file = bot.download_file(file_info.file_path, offset=0, length=14 * 1024 * 1024)
+    else:
+        # Download the entire video file
+        file = bot.download_file(file_info.file_path)
 
-    # Download the video file
-    file_size = min(file_info.file_size, MAX_DOWNLOAD_SIZE_BYTES)
-    file = bot.download_file(file_info.file_path, limit=file_size)
     video_filename = f"video_{file_id}.mp4"
 
     with open(video_filename, 'wb') as f:
@@ -67,16 +70,6 @@ def handle_video(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
-# Handler to handle the custom caption provided by the user
-def handle_caption(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        caption = message.text
-        user_data[user_id]["caption"] = caption
-        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
-        bot.register_next_step_handler(message, handle_link)
-    else:
-        bot.send_message(message.chat.id, "Please send a video first.")
 
 # Handler to handle the link provided by the user
 def handle_link(message):
