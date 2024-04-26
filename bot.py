@@ -7,7 +7,6 @@ TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
 MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
-MAX_PROCESSING_SIZE_BYTES = 14 * 1024 * 1024  # 14 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -34,24 +33,23 @@ user_data = {}
 def start_message(message):
     bot.send_message(message.chat.id, "Welcome! Please send a video🤝")
 
-# Handler to process videos sent by the user
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     bot.send_message(message.chat.id, "Processing the video...")
     file_id = message.video.file_id
-    print("File ID:", file_id)  # Print file ID for debugging
-
     file_info = bot.get_file(file_id)
+    
+    # Check if the file size exceeds the maximum allowed size
     if file_info.file_size > MAX_FILE_SIZE_BYTES:
-        bot.send_message(message.chat.id, "The file size is too large. Processing the first 14 MB...")
-        file = bot.download_file(file_info.file_path, limit=MAX_PROCESSING_SIZE_BYTES)
+        bot.send_message(message.chat.id, "The file size is too large. Processing only the first 14 MB.")
+        file_path = bot.download_file(file_info.file_path, limit=14*1024*1024)  # Download only the first 14 MB
     else:
-        file = bot.download_file(file_info.file_path)
+        file_path = bot.download_file(file_info.file_path)
 
     video_filename = f"video_{file_id}.mp4"
 
     with open(video_filename, 'wb') as f:
-        f.write(file)
+        f.write(file_path)
 
     try:
         # Extract the middle segment from the video
