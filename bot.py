@@ -55,23 +55,18 @@ def handle_video(message):
 
         # Send the extracted segments to the user
         with open(start_segment, 'rb') as video_file:
-           bot.send_video(message.chat.id, video_file)
+            bot.send_video(message.chat.id, video_file)
         with open(middle_segment, 'rb') as video_file:
-           bot.send_video(message.chat.id, video_file)
+            bot.send_video(message.chat.id, video_file)
         with open(end_segment, 'rb') as video_file:
-           bot.send_video(message.chat.id, video_file)
-        
+            bot.send_video(message.chat.id, video_file)
 
-        # Check if the user has already reviewed a segment
-        if "segment_filename" not in user_data[message.chat.id]:
-            # Ask the user to choose a segment
-            bot.send_message(message.chat.id, "Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
-            user_data[message.chat.id]["start_segment"] = start_segment
-            user_data[message.chat.id]["middle_segment"] = middle_segment
-            user_data[message.chat.id]["end_segment"] = end_segment
+        # Ask the user to choose a segment
+        bot.send_message(message.chat.id, "Please choose a segment by sending the corresponding number:\n1. Starting segment\n2. Middle segment\n3. End segment")
+        user_data[message.chat.id] = {"start_segment": start_segment, "middle_segment": middle_segment, "end_segment": end_segment}
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
-# Handler to process user's segment choice
+
 # Handler to process user's segment choice
 @bot.message_handler(func=lambda message: True)
 def handle_segment_choice(message):
@@ -124,7 +119,7 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link and additional text
-        formatted_caption = f"@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
+        formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
 
         # Send back the video with caption and link embedded
         try:
