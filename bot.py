@@ -14,6 +14,7 @@ bot = telebot.TeleBot(TOKEN)
 # Function to extract a segment from the video based on the start and end times
 def extract_segment(video_filename, start_time, end_time):
     clip = VideoFileClip(video_filename)
+    duration = clip.duration
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
     try:
@@ -48,10 +49,9 @@ def handle_video(message):
 
     try:
         # Extract segments from the video: starting, middle, and end
-        duration = VideoFileClip(video_filename).duration
-        start_segment = extract_segment(video_filename, 0, min(duration, 5))
-        middle_segment = extract_segment(video_filename, max(0.25 * duration, 0), min(0.5 * duration, duration))
-        end_segment = extract_segment(video_filename, max(duration - 5, 0), duration)
+        start_segment = extract_segment(video_filename, 0, 5)
+        middle_segment = extract_segment(video_filename, duration/4, duration/2)
+        end_segment = extract_segment(video_filename, duration-5, duration)
 
         # Send the extracted segments to the user
         with open(start_segment, 'rb') as video_file:
