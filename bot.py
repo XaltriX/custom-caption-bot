@@ -7,7 +7,7 @@ from moviepy.editor import VideoFileClip
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE_BYTES = 18 * 1024 * 1024  # 50 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -24,7 +24,7 @@ def extract_segment(video_filename):
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
     try:
-        segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False, progress_bar=False)  # Save as mp4
+        segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)  # Save as mp4
     except BrokenPipeError:
         raise Exception("Error occurred while processing the video segment.")
     return extracted_filename
@@ -104,7 +104,7 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link
-        formatted_caption = f"@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n{link}"
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
 
         # Send back the video with caption and link embedded
         try:
