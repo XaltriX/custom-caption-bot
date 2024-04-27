@@ -59,11 +59,9 @@ def process_video(file_info, chat_id):
         middle_segment = extract_middle_segment(video_filename)
         # Send the extracted middle segment to the user
         with open(middle_segment, 'rb') as video_file:
-            # Add custom caption and link
-            caption = "Check out this amazing video!"
-            link = "https://example.com"
-            formatted_caption = f"@neonghost_networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
-            bot.send_video(chat_id, video_file, caption=formatted_caption)
+            # Custom caption with a link
+            caption_text = "Custom caption for the video.\n\n🔗 [Link Text](https://example.com)"
+            bot.send_video(chat_id, video_file, caption=caption_text, parse_mode='Markdown')
     except Exception as e:
         bot.send_message(chat_id, f"Sorry, there was an error processing your video: {e}")
     finally:
