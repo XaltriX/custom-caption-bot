@@ -2,3 +2,4 @@ moviepy
 telebot
 python-telegram-bot
 ffmpeg-python
+mega
