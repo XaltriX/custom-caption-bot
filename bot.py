@@ -2,6 +2,8 @@ import telebot
 import os
 import random
 from moviepy.editor import VideoFileClip
+from PIL import Image, ImageFilter
+import io
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -23,11 +25,19 @@ def extract_segment(video_filename):
     end_time = min(start_time + duration, clip.duration)  # End time for segment
     segment = clip.subclip(start_time, end_time)
     extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-    try:
-        segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)  # Save as mp4
-    except BrokenPipeError:
-        raise Exception("Error occurred while processing the video segment.")
+    segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)  # Save as mp4
     return extracted_filename
+
+# Function to extract and blur the cover photo from the video
+def blur_cover_photo(video_filename):
+    clip = VideoFileClip(video_filename)
+    frame = clip.get_frame(0)  # Get the first frame
+    image = Image.fromarray(frame)
+    blurred_image = image.filter(ImageFilter.GaussianBlur(15))
+    blurred_image_io = io.BytesIO()
+    blurred_image.save(blurred_image_io, format='JPEG')
+    blurred_image_io.seek(0)
+    return blurred_image_io
 
 # Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
@@ -52,37 +62,44 @@ def handle_video(message):
         f.write(file)
 
     try:
-        # Extract a new 5-second segment and ask the user for confirmation
+        # Extract a new 5-second segment
         extracted_filename = extract_segment(video_filename)
-        bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
-
+        
+        # Blur the cover photo
+        blurred_cover_photo = blur_cover_photo(extracted_filename)
+        
         # Store user chat ID and extracted filename in user_data
         user_data[message.chat.id] = {"extracted_filename": extracted_filename}
+
+        # Send video with blurred cover photo and buttons
+        bot.send_photo(message.chat.id, blurred_cover_photo, caption="Here's the video segment. Is it suitable?", reply_markup=confirmation_keyboard())
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
 
 # Keyboard markup for confirmation
 def confirmation_keyboard():
-    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2)
-    keyboard.add(telebot.types.KeyboardButton("Yes"), telebot.types.KeyboardButton("No"))
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton("Yes", callback_data="yes"))
+    keyboard.add(telebot.types.InlineKeyboardButton("No", callback_data="no"))
     return keyboard
 
 # Handler to process confirmation of the video segment
-@bot.message_handler(func=lambda message: True)
-def handle_confirmation(message):
-    user_id = message.chat.id
+@bot.callback_query_handler(func=lambda call: True)
+def handle_confirmation(call):
+    user_id = call.message.chat.id
     if user_id in user_data:
         extracted_filename = user_data[user_id]["extracted_filename"]
-        if message.text.lower() == "yes":
-            bot.send_message(message.chat.id, "Great! Please provide a custom caption for the video.")
-            bot.register_next_step_handler(message, handle_caption)
+        if call.data == "yes":
+            bot.send_message(call.message.chat.id, "Great! Please provide a custom caption for the video.")
+            bot.register_next_step_handler(call.message, handle_caption)
         else:
             # Extract a new segment and send it to the user
             extracted_filename = extract_segment(extracted_filename)
-            bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
+            blurred_cover_photo = blur_cover_photo(extracted_filename)
+            bot.send_photo(call.message.chat.id, blurred_cover_photo, caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
             user_data[user_id]["extracted_filename"] = extracted_filename  # Update extracted filename in user_data
     else:
-        bot.send_message(message.chat.id, "Please send a video first.")
+        bot.send_message(call.message.chat.id, "Please send a video first.")
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
@@ -104,12 +121,18 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link
-        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇🫣​⚡​👇\n\n{link}\n"
+
+        # Create inline keyboard with buttons
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        button1 = telebot.types.InlineKeyboardButton(" More Videos🔞", url="https://t.me/+vgOaudZKle0zNmE0")
+        button2 = telebot.types.InlineKeyboardButton("Update Channel🔥​👑​ℹ️​ ", url="https://t.me/leaktapesx")
+        keyboard.add(button1, button2)
 
         # Send back the video with caption and link embedded
         try:
             with open(extracted_filename, 'rb') as video:
-                bot.send_video(user_id, video, caption=formatted_caption)
+                bot.send_video(user_id, video, caption=formatted_caption, reply_markup=keyboard)
         except FileNotFoundError:
             bot.send_message(user_id, "Sorry, there was an error processing your request.")
         finally:
