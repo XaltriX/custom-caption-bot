@@ -71,7 +71,7 @@ def handle_video(message):
         # Store user chat ID and extracted filename in user_data
         user_data[message.chat.id] = {"extracted_filename": extracted_filename}
 
-        # Send video with blurred cover photo and buttons
+        # Send blurred cover photo for confirmation
         bot.send_photo(message.chat.id, blurred_cover_photo, caption="Here's the video segment. Is it suitable?", reply_markup=confirmation_keyboard())
     except Exception as e:
         bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
@@ -129,10 +129,11 @@ def handle_link(message):
         button2 = telebot.types.InlineKeyboardButton("Update Channel🔥​👑​ℹ️​", url="https://t.me/leaktapesx")
         keyboard.add(button1, button2)
 
-        # Send back the video with caption and link embedded
+        # Send back the video with caption and link embedded, with a blurred cover photo
         try:
+            blurred_cover_photo = blur_cover_photo(extracted_filename)
             with open(extracted_filename, 'rb') as video:
-                bot.send_video(user_id, video, caption=formatted_caption, reply_markup=keyboard)
+                bot.send_video(user_id, video, caption=formatted_caption, thumb=blurred_cover_photo, reply_markup=keyboard)
         except FileNotFoundError:
             bot.send_message(user_id, "Sorry, there was an error processing your request.")
         finally:
