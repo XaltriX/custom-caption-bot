@@ -9,7 +9,7 @@ import io
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Maximum allowed file size in bytes (adjust as needed)
-MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -28,7 +28,7 @@ def extract_segment(video_filename):
     segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)  # Save as mp4
     return extracted_filename
 
-# Function to extract and blur the cover photo from the video
+# Function to extract and blur the cover photo from the video segment
 def blur_cover_photo(video_filename):
     clip = VideoFileClip(video_filename)
     frame = clip.get_frame(0)  # Get the first frame
@@ -121,12 +121,12 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the link
-        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇🫣​⚡​👇\n\n{link}\n"
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Video Link is Given Below 👇😏👇\n\n{link}\n"
 
         # Create inline keyboard with buttons
         keyboard = telebot.types.InlineKeyboardMarkup()
-        button1 = telebot.types.InlineKeyboardButton(" More Videos🔞", url="https://t.me/+vgOaudZKle0zNmE0")
-        button2 = telebot.types.InlineKeyboardButton("Update Channel🔥​👑​ℹ️​ ", url="https://t.me/leaktapesx")
+        button1 = telebot.types.InlineKeyboardButton("More Videos🔞", url="https://t.me/+vgOaudZKle0zNmE0")
+        button2 = telebot.types.InlineKeyboardButton("Update Channel🔥​👑​ℹ️​", url="https://t.me/leaktapesx")
         keyboard.add(button1, button2)
 
         # Send back the video with caption and link embedded
