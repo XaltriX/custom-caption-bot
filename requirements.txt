@@ -3,3 +3,5 @@ telebot
 python-telegram-bot
 ffmpeg-python
 mega
+pillow
+pyTelegramBotAPI
