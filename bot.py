@@ -2,6 +2,7 @@ import telebot
 import os
 import random
 from moviepy.editor import VideoFileClip
+from moviepy.video.tools.drawing import blur_image
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -22,18 +23,19 @@ def extract_segment(video_filename):
     start_time = random.uniform(0, max(clip.duration - duration, 0))  # Start time for segment
     end_time = min(start_time + duration, clip.duration)  # End time for segment
     segment = clip.subclip(start_time, end_time)
-    extracted_filename = f"extracted_{os.path.basename(video_filename)}"
+    extracted_filename =f"extracted_{os.path.basename(video_filename)}"
     try:
         segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)  # Save as mp4
-        # Blur the cover photo
-        cover_photo = segment.cover
-        cover_photo = cover_photo.fx(vfx.gaussian_blur, 5)  # Adjust the blur radius as needed
-        cover_photo.write_image(f"{extracted_filename}_cover.jpg")
-        segment.set_duration(0).set_cover(f"{extracted_filename}_cover.jpg").write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False)
-        os.remove(f"{extracted_filename}_cover.jpg")
     except BrokenPipeError:
         raise Exception("Error occurred while processing the video segment.")
     return extracted_filename
+
+# Function to blur the cover photo of the video
+def blur_cover_photo(video_filename):
+    clip = VideoFileClip(video_filename)
+    cover_photo = clip.cover
+    blurred_cover_photo = blur_image(cover_photo, 10)
+    blurred_cover_photo.save(f"{os.path.splitext(video_filename)[0]}_blurred.jpg")
 
 # Handler to start the bot and process videos
 @bot.message_handler(commands=['start'])
@@ -44,7 +46,7 @@ def start_message(message):
 def handle_video(message):
     file_id = message.video.file_id
     file_info = bot.get_file(file_id)
-
+    
     if file_info.file_size > MAX_FILE_SIZE_BYTES:
         bot.send_message(message.chat.id, "Sorry, the file size is too large. Please try with a smaller video.")
         return
@@ -58,6 +60,9 @@ def handle_video(message):
         f.write(file)
 
     try:
+        # Blur the cover photo
+        blur_cover_photo(video_filename)
+
         # Extract a new 5-second segment and ask the user for confirmation
         extracted_filename = extract_segment(video_filename)
         bot.send_video(message.chat.id, open(extracted_filename, 'rb'), caption="Is this segment suitable?", reply_markup=confirmation_keyboard())
@@ -72,6 +77,7 @@ def confirmation_keyboard():
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2)
     keyboard.add(telebot.types.KeyboardButton("Yes"), telebot.types.KeyboardButton("No"))
     return keyboard
+
 # Handler to process confirmation of the video segment
 @bot.message_handler(func=lambda message: True)
 def handle_confirmation(message):
@@ -131,10 +137,8 @@ bot.polling()
 def blur_cover_photo(video_filename):
     clip = VideoFileClip(video_filename)
     cover_photo = clip.cover
-    cover_photo = cover_photo.fx(vfx.gaussian_blur, 5)  # Adjust the blur radius as needed
-    cover_photo.write_image(f"{os.path.splitext(video_filename)[0]}_blurred.jpg")
-    clip.set_duration(0).write_videofile(video_filename, cover_image=f"{os.path.splitext(video_filename)[0]}_blurred.jpg")
-    os.remove(f"{os.path.splitext(video_filename)[0]}_blurred.jpg")
+    blurred_cover_photo = blur_image(cover_photo, 10)
+    blurred_cover_photo.save(f"{os.path.splitext(video_filename)[0]}_blurred.jpg")
 
 # Call the function after extracting the video filename
 extracted_filename = extract_segment(video_filename)
