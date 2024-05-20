@@ -109,13 +109,13 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the preview link and the custom link
-        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n🔗 Preview Link: {preview_link}\n🔗 Video Link: {link}\n"
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n\n🔗 Preview Link: {preview_link} 💋\n\n 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n\n"
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton("Button 1", url="https://example.com/1"),
-                     telebot.types.InlineKeyboardButton("Button 2", url="https://example.com/2"),
-                     telebot.types.InlineKeyboardButton("Button 3", url="https://example.com/3"))
+        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"),
+                     telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"),
+                     telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
         # Send back the cover photo with the custom caption and buttons
         try:
