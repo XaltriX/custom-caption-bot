@@ -109,7 +109,7 @@ def handle_terabox_link(message):
         terabox_link = message.text
 
         # Format the caption with the TeraBox link
-        formatted_caption = fformatted_caption = (
+        formatted_caption =  (
     f"⚝──⭒─⭑─⭒──⚝\n"
     "👉 *Welcome!* 👈\n"
     "⚝──⭒─⭑─⭒──⚝\n\n"
