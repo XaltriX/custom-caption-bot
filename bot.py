@@ -127,7 +127,8 @@ def handle_terabox_link(message):
         keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
         keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-        # Send back the image with the TeraBox link and buttons
+
+            # Send back the image with the TeraBox link and buttons
         try:
             with open(image_filename, 'rb') as image:
                 bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
