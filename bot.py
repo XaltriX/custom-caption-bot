@@ -1,7 +1,5 @@
 import telebot
 import os
-from PIL import Image
-import io
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -68,9 +66,9 @@ def handle_link(message):
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"),
-                     telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"),
-                     telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"))
+        keyboard.add(telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"))
+        keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
         # Send back the cover photo with the custom caption and buttons
         try:
@@ -111,13 +109,20 @@ def handle_terabox_link(message):
         terabox_link = message.text
 
         # Format the caption with the TeraBox link
-        formatted_caption = f"\n@NeonGhost_Networks\n\n🔗 TeraBox Link: {terabox_link} 📁\n\nMade By @NeonGhost_Networks\n"
+        formatted_caption = f"⚝──⭒─⭑─⭒──⚝\n
+👉 *Welcome!* 👈\n
+⚝──⭒─⭑─⭒──⚝\n\n
+≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n
+📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– **@NeonGhost_Networks**\n
+≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n
+➽────────────❥**🔗Full Video Link:🔗**{terabox_link}\n
+───────────── ❝ **By NeonGhost_Networks** ❞ ────────────"
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"),
-                     telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"),
-                     telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+        keyboard.add(telebot.types.InlineKeyboardButton("How To Watch & Download 🔞", url="https://t.me/HTDTeraBox/2"))
+        keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
+        keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
         # Send back the image with the TeraBox link and buttons
         try:
