@@ -1,13 +1,10 @@
 import telebot
 import os
-import random
-from moviepy.editor import VideoFileClip
+from PIL import Image
+import io
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
-
-# Permanent thumbnail URL
-THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
@@ -15,71 +12,29 @@ bot = telebot.TeleBot(TOKEN)
 # Dictionary to store user data
 user_data = {}
 
-# Handler to start the bot and present the initial choice
+# Permanent thumbnail URL for the custom caption feature
+THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
+
+# Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
 def start_message(message):
-    bot.send_message(message.chat.id, "Welcome! What would you like to do?", reply_markup=initial_choice_inline_keyboard())
+    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    button1 = telebot.types.KeyboardButton("Custom Caption")
+    button2 = telebot.types.KeyboardButton("TeraBox Editor")
+    keyboard.add(button1, button2)
+    bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
 
-# Inline keyboard for the initial choice
-def initial_choice_inline_keyboard():
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.add(telebot.types.InlineKeyboardButton("Extract Video Segment", callback_data="extract_segment"),
-                 telebot.types.InlineKeyboardButton("Add Custom Caption", callback_data="custom_caption"))
-    return keyboard
-
-# Callback handler for the initial choice
-@bot.callback_query_handler(func=lambda call: call.data in ["extract_segment", "custom_caption"])
-def handle_initial_choice(call):
-    if call.data == "extract_segment":
-        bot.send_message(call.message.chat.id, "Please send a video for segment extraction.")
-        bot.register_next_step_handler(call.message, handle_video_for_segment)
-    elif call.data == "custom_caption":
-        bot.send_message(call.message.chat.id, "Please provide a custom preview link.")
-        bot.register_next_step_handler(call.message, handle_preview_link)
-
-# Function to extract a 5-second segment from the video
-def extract_segment(video_filename):
-    with VideoFileClip(video_filename) as clip:
-        duration = min(clip.duration, 5)  # Limit duration to 5 seconds
-        start_time = random.uniform(0, max(clip.duration - duration, 0))  # Start time for segment
-        end_time = min(start_time + duration, clip.duration)  # End time for segment
-        segment = clip.subclip(start_time, end_time)
-        extracted_filename = f"extracted_{os.path.basename(video_filename)}"
-        segment.write_videofile(extracted_filename, codec="libx264", fps=24, verbose=False, audio_codec='aac')  # Save as mp4
-    return extracted_filename
-
-# Handler to process video for segment extraction
-def handle_video_for_segment(message):
-    file_id = message.video.file_id
-    file_info = bot.get_file(file_id)
-    
-    if file_info.file_size > 100 * 1024 * 1024:  # 100 MB
-        bot.send_message(message.chat.id, "Sorry, the file size is too large. Please try with a smaller video.")
-        return
-
-    bot.send_message(message.chat.id, "Processing the video...")
-
-    file = bot.download_file(file_info.file_path)
-    video_filename = f"video_{file_id}.mp4"
-
-    with open(video_filename, 'wb') as f:
-        f.write(file)
-
-    try:
-        # Extract a new 5-second segment and send it to the user
-        extracted_filename = extract_segment(video_filename)
-        with open(extracted_filename, 'rb') as video:
-            bot.send_video(message.chat.id, video, caption="Here is your 5-second video segment.")
-        
-        # Remove the extracted segment file
-        os.remove(extracted_filename)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Sorry, there was an error processing your video: {e}")
-    finally:
-        os.remove(video_filename)
-    
-    # Return to the start
-    start_message(message)
+# Handler to process text messages
+@bot.message_handler(content_types=['text'])
+def handle_text(message):
+    if message.text == "Custom Caption":
+        bot.send_message(message.chat.id, "Please provide the preview link.")
+        bot.register_next_step_handler(message, handle_preview_link)
+    elif message.text == "TeraBox Editor":
+        bot.send_message(message.chat.id, "Please send an image.")
+        bot.register_next_step_handler(message, handle_image)
+    else:
+        bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
 
 # Handler to process the preview link for custom caption
 def handle_preview_link(message):
@@ -124,6 +79,55 @@ def handle_link(message):
             bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
         finally:
             # Cleanup user_data
+            del user_data[user_id]
+    else:
+        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+
+# Handler to process images for TeraBox Editor
+def handle_image(message):
+    user_id = message.chat.id
+    if message.content_type == 'photo':
+        file_id = message.photo[-1].file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        # Save the image to a file
+        image_filename = f"image_{file_id}.jpg"
+        with open(image_filename, 'wb') as image_file:
+            image_file.write(downloaded_file)
+
+        # Store the image filename in user_data
+        user_data[user_id] = {"image_filename": image_filename}
+        bot.send_message(user_id, "Please provide the TeraBox link.")
+        bot.register_next_step_handler(message, handle_terabox_link)
+    else:
+        bot.send_message(user_id, "Please send an image.")
+
+# Handler to handle the TeraBox link provided by the user
+def handle_terabox_link(message):
+    user_id = message.chat.id
+    if user_id in user_data:
+        image_filename = user_data[user_id]["image_filename"]
+        terabox_link = message.text
+
+        # Format the caption with the TeraBox link
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🔗 TeraBox Link: {terabox_link} 📁\n\nMade By @NeonGhost_Networks\n"
+
+        # Inline keyboard for additional links
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"),
+                     telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"),
+                     telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+
+        # Send back the image with the TeraBox link and buttons
+        try:
+            with open(image_filename, 'rb') as image:
+                bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
+        except Exception as e:
+            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+        finally:
+            # Cleanup user_data and remove local files
+            os.remove(image_filename)
             del user_data[user_id]
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
