@@ -30,7 +30,7 @@ def handle_text(message):
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send an image with a TeraBox link.")
+        bot.send_message(message.chat.id, "Please send an image with a TeraBox link in the caption.")
         bot.register_next_step_handler(message, handle_image)
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
@@ -97,24 +97,24 @@ def handle_image(message):
 
         # Store the image filename in user_data
         user_data[user_id] = {"image_filename": image_filename}
-        bot.send_message(user_id, "Please provide a message containing a TeraBox link along with the image.")
+        bot.send_message(user_id, "Please wait while I detect the TeraBox link in the caption...")
         bot.register_next_step_handler(message, detect_terabox_link)
     else:
-        bot.send_message(user_id, "Please send an image.")
+        bot.send_message(user_id, "Please send an image with a TeraBox link in the caption.")
 
-# Handler to detect the TeraBox link in the message
+# Handler to detect the TeraBox link in the caption
 def detect_terabox_link(message):
     user_id = message.chat.id
     if user_id in user_data:
         image_filename = user_data[user_id]["image_filename"]
-        text = message.text
+        text = message.caption  # Get the caption text
 
-        # Use regex to find any link containing "terabox" in the message
+        # Use regex to find any link containing "terabox" in the caption
         terabox_link = re.search(r'https?://\S*terabox\S*', text, re.IGNORECASE)
         if terabox_link:
             terabox_link = terabox_link.group(0)
         else:
-            bot.send_message(user_id, "No valid TeraBox link found in the message. Please start again by typing /start.")
+            bot.send_message(user_id, "No valid TeraBox link found in the caption. Please start again by typing /start.")
             return
 
         # Format the caption with the TeraBox link
