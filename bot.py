@@ -6,7 +6,7 @@ import re
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Initialize bot
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TTOKEN)
 
 # Dictionary to store user data
 user_data = {}
@@ -110,7 +110,7 @@ def detect_terabox_link(message):
         text = message.text
 
         # Use regex to find any link containing "terabox" in the message
-        terabox_link = re.search(r'https?://\S*terabox\S*', text)
+        terabox_link = re.search(r'https?://\S*terabox\S*', text, re.IGNORECASE)
         if terabox_link:
             terabox_link = terabox_link.group(0)
         else:
