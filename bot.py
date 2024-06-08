@@ -3,12 +3,15 @@ import os
 import re
 
 # Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
-# Dictionary to store user data
+# Permanent thumbnail URL for the custom caption feature
+THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
+
+# Dictionary to store user data for custom captions
 user_data = {}
 
 # Handler to start the bot and choose feature
@@ -27,45 +30,85 @@ def handle_text(message):
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send an image with a TeraBox link in the caption.")
+        bot.send_message(message.chat.id, "Please send one or more images with TeraBox links in the captions.")
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
 
-# Handler to process images for TeraBox Editor
-@bot.message_handler(content_types=['photo'])
-def handle_image(message):
+# Handler to process the preview link for custom caption
+def handle_preview_link(message):
     user_id = message.chat.id
-    if message.caption:
-        file_id = message.photo[-1].file_id
-        file_info = bot.get_file(file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+    preview_link = message.text
+    user_data[user_id] = {"preview_link": preview_link}
+    bot.send_message(user_id, "Please provide a custom caption for the video.")
+    bot.register_next_step_handler(message, handle_caption)
 
-        # Save the image to a file
-        image_filename = f"image_{file_id}.jpg"
-        with open(image_filename, 'wb') as image_file:
-            image_file.write(downloaded_file)
-
-        # Store the image filename in user_data
-        user_data[user_id] = {"image_filename": image_filename}
-        bot.send_message(user_id, "Please wait while I detect the TeraBox link in the caption...")
-
-        # Detect the TeraBox link in the caption
-        detect_terabox_link(message)
-    else:
-        bot.send_message(user_id, "Please send an image with a TeraBox link in the caption.")
-
-# Handler to detect the TeraBox link in the caption
-def detect_terabox_link(message):
+# Handler to handle the custom caption provided by the user
+def handle_caption(message):
     user_id = message.chat.id
     if user_id in user_data:
-        image_filename = user_data[user_id]["image_filename"]
-        caption = message.caption  # Get the caption text
+        caption = message.text
+        user_data[user_id]["caption"] = caption
+        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
+        bot.register_next_step_handler(message, handle_link)
+    else:
+        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
 
-        # Use regex to find any link containing "terabox" in the caption
-        terabox_link = re.search(r'https?://\S*terabox\S*', caption, re.IGNORECASE)
-        if terabox_link:
-            terabox_link = terabox_link.group(0)
-            formatted_caption = (
+# Handler to handle the link provided by the user
+def handle_link(message):
+    user_id = message.chat.id
+    if user_id in user_data:
+        preview_link = user_data[user_id]["preview_link"]
+        caption = user_data[user_id]["caption"]
+        link = message.text
+
+        # Format the caption with the preview link and the custom link
+        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n\n🔗 Preview Link: {preview_link} 💋\n\n 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n\n"
+
+        # Inline keyboard for additional links
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"))
+        keyboard.add(telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"))
+        keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+
+        # Send back the cover photo with the custom caption and buttons
+        try:
+            bot.send_photo(user_id, THUMBNAIL_URL, caption=formatted_caption, reply_markup=keyboard)
+        except Exception as e:
+            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+        finally:
+            # Cleanup user_data
+            del user_data[user_id]
+    else:
+        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+
+# Handler to process images with captions
+@bot.message_handler(content_types=['photo'])
+def handle_images(message):
+    process_image(message)
+
+def process_image(message):
+    user_id = message.chat.id
+    file_id = message.photo[-1].file_id
+    file_info = bot.get_file(file_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+
+    # Save the image to a file
+    image_filename = f"image_{file_id}.jpg"
+    with open(image_filename, 'wb') as image_file:
+        image_file.write(downloaded_file)
+
+    text = message.caption  # Get the caption text
+
+    # Use regex to find any link containing "terabox" in the caption
+    terabox_link = re.search(r'https?://\S*terabox\S*', text, re.IGNORECASE)
+    if terabox_link:
+        terabox_link = terabox_link.group(0)
+    else:
+        bot.send_message(user_id, "No valid TeraBox link found in the caption. Please try again.")
+        return
+
+    # Format the caption with the TeraBox link
+    formatted_caption = (
     f"⚝──⭒─⭑─⭒──⚝\n"
     "👉 *Welcome!* 👈\n"
     "⚝──⭒─⭑─⭒──⚝\n\n"
@@ -77,24 +120,21 @@ def detect_terabox_link(message):
     "───────── 𝗕𝘆 @𝗡𝗲𝗼𝗻𝗚𝗵𝗼𝘀𝘁_𝗡𝗲𝘁𝘄𝗼𝗿𝗸𝘀 ─────────"
 )
 
-            # Inline keyboard for additional links
-            keyboard = telebot.types.InlineKeyboardMarkup()
-            keyboard.add(telebot.types.InlineKeyboardButton("How To Watch & Download 🔞", url="https://t.me/HTDTeraBox/2"))
-            keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
-            keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+    # Inline keyboard for additional links
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton("How To Watch & Download 🔞", url="https://t.me/HTDTeraBox/2"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
+    keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-            # Send back the image with the TeraBox link and buttons
-            try:
-                with open(image_filename, 'rb') as image:
-                    bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
-            except Exception as e:
-                bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
-            finally:
-                # Cleanup user_data and remove local files
-                os.remove(image_filename)
-                del user_data[user_id]
-        else:
-            bot.send_message(user_id, "No valid TeraBox link found in the caption. Please start again by typing /start.")
+    # Send back the image with the TeraBox link and buttons
+    try:
+        with open(image_filename, 'rb') as image:
+            bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
+    except Exception as e:
+        bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+    finally:
+        # Cleanup user_data and remove local files
+        os.remove(image_filename)
 
 # Start polling for messages
 bot.polling()
