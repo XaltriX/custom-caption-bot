@@ -1,5 +1,6 @@
 import telebot
 import os
+import re
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -29,7 +30,7 @@ def handle_text(message):
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send an image.")
+        bot.send_message(message.chat.id, "Please send an image with a TeraBox link.")
         bot.register_next_step_handler(message, handle_image)
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
@@ -96,31 +97,37 @@ def handle_image(message):
 
         # Store the image filename in user_data
         user_data[user_id] = {"image_filename": image_filename}
-        bot.send_message(user_id, "Please provide the TeraBox link.")
-        bot.register_next_step_handler(message, handle_terabox_link)
+        bot.send_message(user_id, "Please provide a message containing a TeraBox link along with the image.")
+        bot.register_next_step_handler(message, detect_terabox_link)
     else:
         bot.send_message(user_id, "Please send an image.")
 
-# Handler to handle the TeraBox link provided by the user
-def handle_terabox_link(message):
+# Handler to detect the TeraBox link in the message
+def detect_terabox_link(message):
     user_id = message.chat.id
     if user_id in user_data:
         image_filename = user_data[user_id]["image_filename"]
-        terabox_link = message.text
+        text = message.text
+
+        # Use regex to find any link containing "terabox" in the message
+        terabox_link = re.search(r'https?://\S*terabox\S*', text)
+        if terabox_link:
+            terabox_link = terabox_link.group(0)
+        else:
+            bot.send_message(user_id, "No valid TeraBox link found in the message. Please start again by typing /start.")
+            return
 
         # Format the caption with the TeraBox link
-        formatted_caption =  (
-    f"⚝──⭒─⭑─⭒──⚝\n"
-    "👉 *Welcome!* 👈\n"
-    "⚝──⭒─⭑─⭒──⚝\n\n"
-    "≿━━━━━━━━━━༺❀༻━━━━━━━━━≾\n"
-    f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– @NeonGhost_Networks \n"
-    "≿━━━━━━━━━━༺❀༻━━━━━━━━━≾\n\n"
-    f"➽────────❥🔗𝙁𝙪𝙡𝙡 𝙑𝙞𝙙𝙚𝙤 𝙇𝙞𝙣𝙠🔗❥────────➽\n\n"
-    f"𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤:👉🔗 {terabox_link} 🔗👈\n\n"       
-    "───────── 𝗕𝘆 @𝗡𝗲𝗼𝗻𝗚𝗵𝗼𝘀𝘁_𝗡𝗲𝘁𝘄𝗼𝗿𝗸𝘀 ─────────"
-)
-
+        formatted_caption = (
+            f"⚝──⭒─⭑─⭒──⚝\n"
+            "👉 *Welcome!* 👈\n"
+            "⚝──⭒─⭑─⭒──⚝\n\n"
+            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n"
+            f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– **@NeonGhost_Networks**\n"
+            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n"
+            f"➽────────────❥**🔗Full Video Link:🔗**{terabox_link}\n"
+            "─────────────  **By NeonGhost_Networks** ────────────"
+        )
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
@@ -128,8 +135,7 @@ def handle_terabox_link(message):
         keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
         keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-
-            # Send back the image with the TeraBox link and buttons
+        # Send back the image with the TeraBox link and buttons
         try:
             with open(image_filename, 'rb') as image:
                 bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
