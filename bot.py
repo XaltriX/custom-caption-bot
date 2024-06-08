@@ -6,7 +6,7 @@ import re
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Initialize bot
-bot = telebot.TeleBot(TTOKEN)
+bot = telebot.TeleBot(TOKEN)
 
 # Dictionary to store user data
 user_data = {}
