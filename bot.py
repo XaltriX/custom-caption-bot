@@ -30,7 +30,7 @@ def handle_text(message):
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send one or more images with TeraBox links in the captions.")
+        bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
 
@@ -81,21 +81,43 @@ def handle_link(message):
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
 
-# Handler to process images with captions
-@bot.message_handler(content_types=['photo'])
-def handle_images(message):
-    process_image(message)
+# Handler to process images, videos, and GIFs with captions
+@bot.message_handler(content_types=['photo', 'video', 'document'])
+def handle_media(message):
+    if message.content_type == 'photo':
+        process_media(message, 'photo')
+    elif message.content_type == 'video':
+        process_media(message, 'video')
+    elif message.content_type == 'document':
+        # Check if the document is a GIF
+        if message.document.mime_type == 'image/gif':
+            process_media(message, 'gif')
+        else:
+            bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
 
-def process_image(message):
+def process_media(message, media_type):
     user_id = message.chat.id
-    file_id = message.photo[-1].file_id
+
+    if media_type == 'photo':
+        file_id = message.photo[-1].file_id
+    elif media_type == 'video':
+        file_id = message.video.file_id
+    elif media_type == 'gif':
+        file_id = message.document.file_id
+
     file_info = bot.get_file(file_id)
     downloaded_file = bot.download_file(file_info.file_path)
 
-    # Save the image to a file
-    image_filename = f"image_{file_id}.jpg"
-    with open(image_filename, 'wb') as image_file:
-        image_file.write(downloaded_file)
+    # Save the file to a local path
+    if media_type == 'photo':
+        media_filename = f"media_{file_id}.jpg"
+    elif media_type == 'video':
+        media_filename = f"media_{file_id}.mp4"
+    elif media_type == 'gif':
+        media_filename = f"media_{file_id}.gif"
+
+    with open(media_filename, 'wb') as media_file:
+        media_file.write(downloaded_file)
 
     text = message.caption  # Get the caption text
 
@@ -109,16 +131,15 @@ def process_image(message):
 
     # Format the caption with the TeraBox link
     formatted_caption = (
-    f"⚝──⭒─⭑─⭒──⚝\n"
-    "👉 *Welcome!* 👈\n"
-    "⚝──⭒─⭑─⭒──⚝\n\n"
-    "≿━━━━━━━━━━༺❀༻━━━━━━━━━≾\n"
-    f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– @NeonGhost_Networks \n"
-    "≿━━━━━━━━━━༺❀༻━━━━━━━━━≾\n\n"
-    f"➽────────❥🔗𝙁𝙪𝙡𝙡 𝙑𝙞𝙙𝙚𝙤 𝙇𝙞𝙣𝙠🔗❥────────➽\n\n"
-    f"𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤:👉🔗 {terabox_link} 🔗👈\n\n"       
-    "───────── 𝗕𝘆 @𝗡𝗲𝗼𝗻𝗚𝗵𝗼𝘀𝘁_𝗡𝗲𝘁𝘄𝗼𝗿𝗸𝘀 ─────────"
-)
+        f"⚝──⭒─⭑─⭒──⚝\n"
+        "👉 *Welcome!* 👈\n"
+        "⚝──⭒─⭑─⭒──⚝\n\n"
+        "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n"
+        f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– **@NeonGhost_Networks**\n"
+        "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n"
+        f"➽────────────❥**🔗Full Video Link:🔗**{terabox_link}\n"
+        "─────────────  **By NeonGhost_Networks** ────────────"
+    )
 
     # Inline keyboard for additional links
     keyboard = telebot.types.InlineKeyboardMarkup()
@@ -126,15 +147,20 @@ def process_image(message):
     keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
     keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-    # Send back the image with the TeraBox link and buttons
+    # Send back the media with the TeraBox link and buttons
     try:
-        with open(image_filename, 'rb') as image:
-            bot.send_photo(user_id, image, caption=formatted_caption, reply_markup=keyboard)
+        with open(media_filename, 'rb') as media:
+            if media_type == 'photo':
+                bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+            elif media_type == 'video':
+                bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+            elif media_type == 'gif':
+                bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
     except Exception as e:
         bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
     finally:
-        # Cleanup user_data and remove local files
-        os.remove(image_filename)
+        # Remove the local file after sending
+        os.remove(media_filename)
 
 # Start polling for messages
 bot.polling()
