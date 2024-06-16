@@ -103,7 +103,7 @@ def handle_media(message):
             media_file.write(downloaded_file)
 
         # Store the media filename in user_data
-        user_data[user_id] = {"media_filename": media_filename}
+        user_data[user_id] = {"media_filename": media_filename, "content_type": message.content_type}
         bot.send_message(user_id, "Please wait while I detect the TeraBox link in the caption...")
         bot.register_next_step_handler(message, detect_terabox_link)
     else:
@@ -114,7 +114,12 @@ def detect_terabox_link(message):
     user_id = message.chat.id
     if user_id in user_data:
         media_filename = user_data[user_id]["media_filename"]
+        content_type = user_data[user_id]["content_type"]
         text = message.caption  # Get the caption text
+
+        if not text:
+            bot.send_message(user_id, "No caption provided. Please start again by typing /start.")
+            return
 
         # Use regex to find all links containing "terabox" in the caption
         terabox_links = re.findall(r'https?://\S*terabox\S*', text, re.IGNORECASE)
@@ -146,11 +151,11 @@ def detect_terabox_link(message):
         # Send back the media with the TeraBox links and buttons
         try:
             with open(media_filename, 'rb') as media:
-                if message.content_type == 'photo':
+                if content_type == 'photo':
                     bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif message.content_type == 'video':
+                elif content_type == 'video':
                     bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif message.content_type == 'document':
+                elif content_type == 'document':
                     bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
         except Exception as e:
             bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
