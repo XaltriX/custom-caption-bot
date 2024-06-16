@@ -28,11 +28,13 @@ def start_message(message):
 def handle_text(message):
     if message.text == "Custom Caption":
         bot.send_message(message.chat.id, "Please provide the preview link.")
-        bot.register_next_step_handler(message, handle_preview_link)
+        # Assuming handle_preview_link is not defined, removing next step registration
+        # bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
         bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
+
 # Handler to process images, videos, and GIFs with captions
 @bot.message_handler(content_types=['photo', 'video', 'document'])
 def handle_media(message):
@@ -153,29 +155,32 @@ def handle_callback_query(call):
         bot.send_message(user_id, "Feature under development. Please choose another option.")
 
     elif call.data == "auto_post":
-        # Forward the message to the specified channel
-        formatted_caption = user_data[user_id]["formatted_caption"]
-        media_filename = user_data[user_id]["media_filename"]
-        media_type = user_data[user_id]["media_type"]
+    # Forward the message to the specified channel
+    formatted_caption = user_data[user_id]["formatted_caption"]
+    media_filename = user_data[user_id]["media_filename"]
+    media_type = user_data[user_id]["media_type"]
 
-        try:
-            with open(media_filename, 'rb') as media:
-                if media_type == 'photo':
-                    bot.send_photo(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
-                elif media_type == 'video':
-                    bot.send_video(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
-                elif media_type == 'gif':
-                    bot.send_document(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+    try:
+        with open(media_filename, 'rb') as media:
+            if media_type == 'photo':
+                bot.send_photo(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+            elif media_type == 'video':
+                bot.send_video(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+            elif media_type == 'gif':
+                bot.send_document(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
 
-            bot.send_message(user_id, "Successfully posted to the channel!")
+        bot.send_message(user_id, "Successfully posted to the channel!")
 
-        except Exception as e:
-            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
-        finally:
-            # Remove the local file after sending
+    except FileNotFoundError:
+        bot.send_message(user_id, "File not found. Cannot post.")
+    except Exception as e:
+        bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+    finally:
+        # Remove the local file if it exists
+        if os.path.exists(media_filename):
             os.remove(media_filename)
-            # Cleanup user_data
-            del user_data[user_id]
+        # Cleanup user_data
+        del user_data[user_id]
 
     elif call.data == "cancel":
         bot.send_message(user_id, "Operation canceled. Please choose another option.")
