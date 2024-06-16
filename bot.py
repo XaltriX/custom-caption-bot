@@ -7,7 +7,6 @@ TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
-
 # Permanent thumbnail URL for the custom caption feature
 THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
 
@@ -16,7 +15,6 @@ user_data = {}
 
 # Channel ID where posts will be automatically forwarded
 AUTO_POST_CHANNEL_ID = -1002070953272  # Replace with your actual channel ID
-
 # Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
 def start_message(message):
@@ -25,7 +23,6 @@ def start_message(message):
     button2 = telebot.types.KeyboardButton("TeraBox Editor")
     keyboard.add(button1, button2)
     bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
-
 # Handler to process text messages
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -49,7 +46,6 @@ def handle_media(message):
             process_media(message, 'gif')
         else:
             bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
-
 def process_media(message, media_type):
     user_id = message.chat.id
 
@@ -95,7 +91,7 @@ def process_media(message, media_type):
 
     else:
         bot.send_message(user_id, "No valid TeraBox links found in the caption. Please try again.")
-        # Handler for callback queries (post now or schedule)
+# Handler for callback queries (post now or schedule)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     user_id = call.message.chat.id
@@ -183,8 +179,6 @@ def handle_callback_query(call):
 
     elif call.data == "cancel":
         bot.send_message(user_id, "Operation canceled. Please choose another option.")
-
-
 # Handler for processing errors
 @bot.message_handler(func=lambda message: True)
 def handle_errors(message):
@@ -192,4 +186,3 @@ def handle_errors(message):
 
 # Start polling for messages
 bot.polling()
-
