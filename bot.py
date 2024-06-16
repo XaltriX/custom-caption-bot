@@ -173,7 +173,7 @@ def handle_callback_query(call):
 
             bot.send_message(user_id, "Successfully posted to the channel!")
 
-                except Exception as e:
+        except Exception as e:
             bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
         finally:
             # Remove the local file after sending
@@ -183,6 +183,7 @@ def handle_callback_query(call):
 
     elif call.data == "cancel":
         bot.send_message(user_id, "Operation canceled. Please choose another option.")
+
 
 # Handler for processing errors
 @bot.message_handler(func=lambda message: True)
