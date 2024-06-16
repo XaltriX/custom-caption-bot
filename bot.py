@@ -3,34 +3,33 @@ import os
 import re
 
 # Your Telegram Bot API token
-TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
+TOKEN = 'YOUR_BOT_TOKEN'
 
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
+
 # Permanent thumbnail URL for the custom caption feature
 THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
 
-# Dictionary to store user data for custom captions
+# Dictionary to store user data for custom captions and terabox links
 user_data = {}
 
 # Channel ID where posts will be automatically forwarded
 AUTO_POST_CHANNEL_ID = -1002070953272  # Replace with your actual channel ID
+
 # Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
 def start_message(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    button1 = telebot.types.KeyboardButton("Custom Caption")
-    button2 = telebot.types.KeyboardButton("TeraBox Editor")
+    button1 = telebot.types.KeyboardButton("Single Post")
+    button2 = telebot.types.KeyboardButton("Multiple Posts")
     keyboard.add(button1, button2)
-    bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
+    bot.send_message(message.chat.id, "Welcome! Please choose an option for Terabox Editor:", reply_markup=keyboard)
+
 # Handler to process text messages
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
-    if message.text == "Custom Caption":
-        bot.send_message(message.chat.id, "Please provide the preview link.")
-        # Assuming handle_preview_link is not defined, removing next step registration
-        # bot.register_next_step_handler(message, handle_preview_link)
-    elif message.text == "TeraBox Editor":
+    if message.text == "Single Post" or message.text == "Multiple Posts":
         bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
@@ -48,6 +47,7 @@ def handle_media(message):
             process_media(message, 'gif')
         else:
             bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
+
 def process_media(message, media_type):
     user_id = message.chat.id
 
@@ -77,13 +77,6 @@ def process_media(message, media_type):
     # Use regex to find any link containing "terabox" in the caption
     terabox_links = re.findall(r'https?://\S*terabox\S*', text, re.IGNORECASE)
     if terabox_links:
-        # Prompt user to select posting option
-        keyboard = telebot.types.InlineKeyboardMarkup()
-        button_now = telebot.types.InlineKeyboardButton("Post Now", callback_data="post_now")
-        button_schedule = telebot.types.InlineKeyboardButton("Schedule for Later", callback_data="schedule")
-        keyboard.row(button_now, button_schedule)
-        bot.send_message(user_id, "Choose when you want to post this:", reply_markup=keyboard)
-
         # Store data in user_data for processing after user choice
         user_data[user_id] = {
             "terabox_links": terabox_links,
@@ -91,103 +84,83 @@ def process_media(message, media_type):
             "media_type": media_type
         }
 
+        # Prompt user to enable autopost
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        button_auto_post = telebot.types.InlineKeyboardButton("Enable Autopost", callback_data="auto_post")
+        keyboard.add(button_auto_post)
+        bot.send_message(user_id, "Do you want to enable autopost for this content?", reply_markup=keyboard)
+
     else:
         bot.send_message(user_id, "No valid TeraBox links found in the caption. Please try again.")
-# Handler for callback queries (post now or schedule)
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback_query(call):
+
+# Handler for callback queries (autopost)
+@bot.callback_query_handler(func=lambda call: call.data == "auto_post")
+def handle_autopost(call):
     user_id = call.message.chat.id
 
-    if call.data == "post_now":
+    if user_id in user_data:
         terabox_links = user_data[user_id]["terabox_links"]
         media_filename = user_data[user_id]["media_filename"]
         media_type = user_data[user_id]["media_type"]
 
-        # Format the caption with the TeraBox links
-        formatted_caption = (
-            f"⚝──⭒─⭑─⭒──⚝\n"
-            "👉 *Welcome!* 👈\n"
-            "⚝──⭒─⭑─⭒──⚝\n\n"
-            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n"
-            f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– **@NeonGhost_Networks**\n"
-            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n"
-        )
-        for idx, link in enumerate(terabox_links):
-            formatted_caption += f"📽️ 𝐋𝐈𝐍𝐊 {idx + 1}:– {link}\n"
-        formatted_caption += (
-            "─────────────  **By NeonGhost_Networks** ────────────"
-        )
-
-        # Inline keyboard for additional links
-        keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton("How To Watch & Download 🔞", url="https://t.me/HTDTeraBox/2"))
-        keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
-        keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
-
-        # Send back the media with the TeraBox links and buttons
         try:
-            with open(media_filename, 'rb') as media:
-                if media_type == 'photo':
-                    bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif media_type == 'video':
-                    bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif media_type == 'gif':
-                    bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+            # Simulate posting process (replace with actual posting logic)
+            if media_type == 'photo':
+                bot.send_photo(user_id, open(media_filename, 'rb'))
+            elif media_type == 'video':
+                bot.send_video(user_id, open(media_filename, 'rb'))
+            elif media_type == 'gif':
+                bot.send_document(user_id, open(media_filename, 'rb'))
 
-            # If auto-post to channel is selected
-            if call.message.chat.type == 'private':  # Ensure the message is from a private chat
-                keyboard = telebot.types.InlineKeyboardMarkup()
-                button_auto_post = telebot.types.InlineKeyboardButton("Yes, Post to Channel", callback_data="auto_post")
-                button_cancel = telebot.types.InlineKeyboardButton("Cancel", callback_data="cancel")
-                keyboard.row(button_auto_post, button_cancel)
-                bot.send_message(user_id, "Do you want to automatically post this to the channel?", reply_markup=keyboard)
+            bot.send_message(user_id, "Post successfully created!")
 
-                # Store data in user_data for processing after user choice
-                user_data[user_id]["formatted_caption"] = formatted_caption
+            # If autopost is enabled, post to the designated channel
+            keyboard = telebot.types.InlineKeyboardMarkup()
+            button_post_channel = telebot.types.InlineKeyboardButton("Post to Channel", callback_data="post_to_channel")
+            keyboard.add(button_post_channel)
+            bot.send_message(user_id, "Do you want to post this to the channel?", reply_markup=keyboard)
 
         except Exception as e:
-            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+            bot.send_message(user_id, f"Error creating post: {e}")
+
         finally:
-            # Remove the local file after sending
-            os.remove(media_filename)
+            # Cleanup user_data and remove local file
+            if os.path.exists(media_filename):
+                os.remove(media_filename)
+            del user_data[user_id]
 
-    elif call.data == "schedule":
-        bot.send_message(user_id, "Feature under development. Please choose another option.")
+    else:
+        bot.send_message(user_id, "No media found for autopost.")
 
-    elif call.data == "auto_post":
-    # Forward the message to the specified channel
-    formatted_caption = user_data[user_id]["formatted_caption"]
-    media_filename = user_data[user_id]["media_filename"]
-    media_type = user_data[user_id]["media_type"]
+# Handler for callback queries (post to channel)
+@bot.callback_query_handler(func=lambda call: call.data == "post_to_channel")
+def handle_post_to_channel(call):
+    user_id = call.message.chat.id
 
     try:
+        # Forward the message to the specified channel
+        formatted_caption = "Caption for the channel post"  # Replace with your actual caption
+        media_filename = user_data[user_id]["media_filename"]
+        media_type = user_data[user_id]["media_type"]
+
         with open(media_filename, 'rb') as media:
             if media_type == 'photo':
-                bot.send_photo(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+                bot.send_photo(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption)
             elif media_type == 'video':
-                bot.send_video(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+                bot.send_video(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption)
             elif media_type == 'gif':
-                bot.send_document(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption, reply_markup=None)
+                bot.send_document(AUTO_POST_CHANNEL_ID, media, caption=formatted_caption)
 
         bot.send_message(user_id, "Successfully posted to the channel!")
 
-    except FileNotFoundError:
-        bot.send_message(user_id, "File not found. Cannot post.")
     except Exception as e:
-        bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+        bot.send_message(user_id, f"Error posting to channel: {e}")
+
     finally:
-        # Remove the local file if it exists
+        # Cleanup user_data and remove local file
         if os.path.exists(media_filename):
             os.remove(media_filename)
-        # Cleanup user_data
         del user_data[user_id]
-
-    elif call.data == "cancel":
-        bot.send_message(user_id, "Operation canceled. Please choose another option.")
-# Handler for processing errors
-@bot.message_handler(func=lambda message: True)
-def handle_errors(message):
-    bot.send_message(message.chat.id, "Sorry, I didn't understand that command. Please choose a valid option from the menu.")
 
 # Start polling for messages
 bot.polling()
