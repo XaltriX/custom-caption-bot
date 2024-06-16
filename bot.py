@@ -8,11 +8,11 @@ TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 # Initialize bot
 bot = telebot.TeleBot(TOKEN)
 
-# Dictionary to store user data
-user_data = {}
-
 # Permanent thumbnail URL for the custom caption feature
 THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
+
+# Dictionary to store user data for custom captions
+user_data = {}
 
 # Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
@@ -30,8 +30,7 @@ def handle_text(message):
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send an image, video, or GIF with a TeraBox link in the caption.")
-        bot.register_next_step_handler(message, handle_media)
+        bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
 
@@ -82,41 +81,52 @@ def handle_link(message):
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
 
-# Handler to process media for TeraBox Editor
+# Handler to process images, videos, and GIFs with captions
+@bot.message_handler(content_types=['photo', 'video', 'document'])
 def handle_media(message):
     user_id = message.chat.id
-    if message.content_type in ['photo', 'video', 'document']:
-        file_id = None
-        if message.content_type == 'photo':
+    media_type = message.content_type
+
+    if media_type == 'photo':
+        process_media(message, 'photo')
+    elif media_type == 'video':
+        process_media(message, 'video')
+    elif media_type == 'document':
+        # Check if the document is a GIF
+        if message.document.mime_type == 'image/gif':
+            process_media(message, 'gif')
+        else:
+            bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
+    else:
+        bot.send_message(message.chat.id, "Unsupported media type. Please send images, videos, or GIFs.")
+
+def process_media(message, media_type):
+    user_id = message.chat.id
+
+    try:
+        if media_type == 'photo':
             file_id = message.photo[-1].file_id
-        elif message.content_type == 'video':
+        elif media_type == 'video':
             file_id = message.video.file_id
-        elif message.content_type == 'document':
+        elif media_type == 'gif':
             file_id = message.document.file_id
 
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
-        # Save the media to a file
-        media_filename = f"media_{file_id}"
+        # Save the file to a local path
+        if media_type == 'photo':
+            media_filename = f"media_{file_id}.jpg"
+        elif media_type == 'video':
+            media_filename = f"media_{file_id}.mp4"
+        elif media_type == 'gif':
+            media_filename = f"media_{file_id}.gif"
+
         with open(media_filename, 'wb') as media_file:
             media_file.write(downloaded_file)
 
-        # Store the media filename in user_data
-        user_data[user_id] = {"media_filename": media_filename, "content_type": message.content_type}
-        bot.send_message(user_id, "Please wait while I detect the TeraBox link in the caption...")
-        bot.register_next_step_handler(message, detect_terabox_link)
-    else:
-        bot.send_message(user_id, "Please send an image, video, or GIF with a TeraBox link in the caption.")
-
-# Handler to detect the TeraBox link in the caption
-def detect_terabox_link(message):
-    user_id = message.chat.id
-    if user_id in user_data:
-        media_filename = user_data[user_id]["media_filename"]
-        content_type = user_data[user_id]["content_type"]
+        # Use regex to find any link containing "terabox" in the caption
         text = message.caption  # Get the caption text
-
         if not text:
             bot.send_message(user_id, "No caption provided. Please start again by typing /start.")
             return
@@ -124,7 +134,7 @@ def detect_terabox_link(message):
         # Use regex to find all links containing "terabox" in the caption
         terabox_links = re.findall(r'https?://\S*terabox\S*', text, re.IGNORECASE)
         if not terabox_links:
-            bot.send_message(user_id, "No valid TeraBox link found in the caption. Please start again by typing /start.")
+            bot.send_message(user_id, "No valid TeraBox link found in the caption. Please try again.")
             return
 
         # Format the caption with the TeraBox links
@@ -137,8 +147,11 @@ def detect_terabox_link(message):
             "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n"
         )
 
-        for idx, link in enumerate(terabox_links, start=1):
-            formatted_caption += f"➽────────────❥**🔗Video Link {idx}:🔗** {link}\n"
+        if len(terabox_links) == 1:
+            formatted_caption += f"➽────────────❥**🔗Full Video Link:🔗** {terabox_links[0]}\n"
+        else:
+            for idx, link in enumerate(terabox_links, start=1):
+                formatted_caption += f"➽────────────❥**🔗Video Link {idx}:🔗** {link}\n"
 
         formatted_caption += "─────────────  **By NeonGhost_Networks** ────────────"
 
@@ -149,22 +162,21 @@ def detect_terabox_link(message):
         keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
         # Send back the media with the TeraBox links and buttons
-        try:
-            with open(media_filename, 'rb') as media:
-                if content_type == 'photo':
-                    bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif content_type == 'video':
-                    bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-                elif content_type == 'document':
-                    bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
-        except Exception as e:
-            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
-        finally:
-            # Cleanup user_data and remove local files
+        with open(media_filename, 'rb') as media:
+            if media_type == 'photo':
+                bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+            elif media_type == 'video':
+                bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+            elif media_type == 'gif':
+                bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+
+    except Exception as e:
+        bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+
+    finally:
+        # Remove the local file after sending
+        if os.path.exists(media_filename):
             os.remove(media_filename)
-            del user_data[user_id]
-    else:
-        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
 
 # Start polling for messages
 bot.polling()
