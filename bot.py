@@ -33,7 +33,8 @@ def start_message(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     button1 = telebot.types.KeyboardButton("Custom Caption")
     button2 = telebot.types.KeyboardButton("TeraBox Editor")
-    keyboard.add(button1, button2)
+    button3 = telebot.types.KeyboardButton("Cancel")
+    keyboard.add(button1, button2, button3)
     bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
 
 # Handler to process text messages
@@ -42,10 +43,13 @@ def handle_text(message):
     if not is_user_allowed(message):
         return
     if message.text == "Custom Caption":
-        bot.send_message(message.chat.id, "Please provide the preview link.")
+        bot.send_message(message.chat.id, "Please provide the preview link or type 'Cancel' to exit.")
         bot.register_next_step_handler(message, handle_preview_link)
     elif message.text == "TeraBox Editor":
         bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
+    elif message.text == "Cancel":
+        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+        start_message(message)
     else:
         bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
 
@@ -53,21 +57,29 @@ def handle_text(message):
 def handle_preview_link(message):
     if not is_user_allowed(message):
         return
+    if message.text.lower() == "cancel":
+        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+        start_message(message)
+        return
     user_id = message.chat.id
     preview_link = message.text
     user_data[user_id] = {"preview_link": preview_link}
-    bot.send_message(user_id, "Please provide a custom caption for the video.")
+    bot.send_message(user_id, "Please provide a custom caption for the video or type 'Cancel' to exit.")
     bot.register_next_step_handler(message, handle_caption)
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
     if not is_user_allowed(message):
         return
+    if message.text.lower() == "cancel":
+        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+        start_message(message)
+        return
     user_id = message.chat.id
     if user_id in user_data:
         caption = message.text
         user_data[user_id]["caption"] = caption
-        bot.send_message(message.chat.id, "Please provide a link to add in the caption.")
+        bot.send_message(message.chat.id, "Please provide a link to add in the caption or type 'Cancel' to exit.")
         bot.register_next_step_handler(message, handle_link)
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
@@ -75,6 +87,10 @@ def handle_caption(message):
 # Handler to handle the link provided by the user
 def handle_link(message):
     if not is_user_allowed(message):
+        return
+    if message.text.lower() == "cancel":
+        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+        start_message(message)
         return
     user_id = message.chat.id
     if user_id in user_data:
@@ -100,7 +116,7 @@ def handle_link(message):
             # Cleanup user_data
             del user_data[user_id]
             # Restart the process for the next post
-            bot.send_message(user_id, "Please provide the preview link for the next post.")
+            bot.send_message(user_id, "Please provide the preview link for the next post or type 'Cancel' to exit.")
             bot.register_next_step_handler(message, handle_preview_link)
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
