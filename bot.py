@@ -14,9 +14,22 @@ THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace w
 # Dictionary to store user data for custom captions
 user_data = {}
 
+# Allowed user (your Telegram username without '@')
+ALLOWED_USER = 'i_am_yamraj'
+
+# Helper function to check if the user is allowed
+def is_user_allowed(message):
+    user = bot.get_chat(message.chat.id)
+    if user.username != ALLOWED_USER:
+        bot.send_message(message.chat.id, "This is a personal bot. If you want to make your own bot, please contact the developer @i_am_yamraj.")
+        return False
+    return True
+
 # Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
 def start_message(message):
+    if not is_user_allowed(message):
+        return
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     button1 = telebot.types.KeyboardButton("Custom Caption")
     button2 = telebot.types.KeyboardButton("TeraBox Editor")
@@ -26,6 +39,8 @@ def start_message(message):
 # Handler to process text messages
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
+    if not is_user_allowed(message):
+        return
     if message.text == "Custom Caption":
         bot.send_message(message.chat.id, "Please provide the preview link.")
         bot.register_next_step_handler(message, handle_preview_link)
@@ -36,6 +51,8 @@ def handle_text(message):
 
 # Handler to process the preview link for custom caption
 def handle_preview_link(message):
+    if not is_user_allowed(message):
+        return
     user_id = message.chat.id
     preview_link = message.text
     user_data[user_id] = {"preview_link": preview_link}
@@ -44,6 +61,8 @@ def handle_preview_link(message):
 
 # Handler to handle the custom caption provided by the user
 def handle_caption(message):
+    if not is_user_allowed(message):
+        return
     user_id = message.chat.id
     if user_id in user_data:
         caption = message.text
@@ -55,6 +74,8 @@ def handle_caption(message):
 
 # Handler to handle the link provided by the user
 def handle_link(message):
+    if not is_user_allowed(message):
+        return
     user_id = message.chat.id
     if user_id in user_data:
         preview_link = user_data[user_id]["preview_link"]
@@ -84,6 +105,8 @@ def handle_link(message):
 # Handler to process images, videos, and GIFs with captions
 @bot.message_handler(content_types=['photo', 'video', 'document'])
 def handle_media(message):
+    if not is_user_allowed(message):
+        return
     user_id = message.chat.id
     media_type = message.content_type
 
@@ -139,12 +162,12 @@ def process_media(message, media_type):
 
         # Format the caption with the TeraBox links
         formatted_caption = (
-            f"⚝──⭒─⭑─⭒──⚝\n"
+            f"⚝────────⭒─⭑─⭒────────⚝\n"
             "👉  ​🇼​​🇪​​🇱​​🇨​​🇴​​🇲​​🇪​❗ 👈\n"
-            "⚝──⭒─⭑─⭒──⚝\n\n"
-            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n"
+            "⚝────────⭒─⭑─⭒────────⚝\n\n"
+            "≿━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━≾\n"
             f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– @NeonGhost_Networks\n"
-            "≿━━━━━━━━━━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━━━━━━━━━━≾\n\n"
+            "≿━━━━━━━━━━━━━━༺❀༻━━━━━━━━━━━━━≾\n\n"
         )
 
         if len(terabox_links) == 1:
@@ -153,7 +176,7 @@ def process_media(message, media_type):
             for idx, link in enumerate(terabox_links, start=1):
                 formatted_caption += f"➽────────────❥🔗𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤 {idx}:🔗 {link}\n"
 
-        formatted_caption += "─────────────𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔────────────"
+        formatted_caption += "────────❚█══𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔══█❚───────"
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
