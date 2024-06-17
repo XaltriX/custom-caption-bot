@@ -99,6 +99,9 @@ def handle_link(message):
         finally:
             # Cleanup user_data
             del user_data[user_id]
+            # Restart the process for the next post
+            bot.send_message(user_id, "Please provide the preview link for the next post.")
+            bot.register_next_step_handler(message, handle_preview_link)
     else:
         bot.send_message(message.chat.id, "Please start the process again by typing /start.")
 
