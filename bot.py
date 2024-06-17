@@ -162,21 +162,21 @@ def process_media(message, media_type):
 
         # Format the caption with the TeraBox links
         formatted_caption = (
-            f"⚝────────⭒─⭑─⭒────────⚝\n"
+            f"⚝──────⭒─⭑─⭒──────⚝\n"
             "  👉  ​🇼​​🇪​​🇱​​🇨​​🇴​​🇲​​🇪​❗ 👈\n"
-            "⚝────────⭒─⭑─⭒────────⚝\n\n"
+            "⚝──────⭒─⭑─⭒───────⚝\n\n"
             "≿━━━━━━━༺❀༻━━━━━━≾\n"
             f"📥  𝐉𝐎𝐈𝐍 𝐔𝐒 :– @NeonGhost_Networks\n"
             "≿━━━━━━━༺❀༻━━━━━━≾\n\n"
         )
 
         if len(terabox_links) == 1:
-            formatted_caption += f"➽───❥🔗𝐅𝐮𝐥𝐥 𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤:🔗 {terabox_links[0]}\n"
+            formatted_caption += f"➽───❥🔗𝐅𝐮𝐥𝐥 𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤:🔗 {terabox_links[0]}\n\n"
         else:
             for idx, link in enumerate(terabox_links, start=1):
-                formatted_caption += f"➽───❥🔗𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤 {idx}:🔗 {link}\n"
+                formatted_caption += f"➽───❥🔗𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤 {idx}:🔗 {link}\n\n"
 
-        formatted_caption += "──❚█══𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔══█❚──"
+        formatted_caption += "─❚█═𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔═█❚─"
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
