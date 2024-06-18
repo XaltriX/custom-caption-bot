@@ -99,7 +99,14 @@ def handle_link(message):
         link = message.text
 
         # Format the caption with the preview link and the custom link
-        formatted_caption = f"\n@NeonGhost_Networks\n\n🚨 {caption} 🚨\n\n\n🔗 Preview Link: {preview_link} 💋\n\n 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n\n"
+        formatted_caption = (
+    f"◇──◆──◇──◆  ◇──◆──◇──◆\n"
+    f"   @NeonGhost_Networks\n"
+    f"◇──◆──◇──◆  ◇──◆──◇──◆\n\n"
+    f"╰┈┈➤ 🚨 {caption} 🚨\n"
+    f"╰┈┈┈┈┈➤ 🔗 Preview Link: {preview_link}\n"
+    f"╰┈┈┈┈┈┈┈┈➤ 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n"
+)
 
         # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
