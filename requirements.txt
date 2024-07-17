@@ -1,6 +1,6 @@
 pyTelegramBotAPI
 requests
-opencv-python
+opencv-python-headless
 Pillow
 ffmpeg-python
 numpy
