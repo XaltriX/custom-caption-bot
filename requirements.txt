@@ -3,3 +3,5 @@ requests
 opencv-python
 Pillow
 ffmpeg-python
+numpy
+moviepy
