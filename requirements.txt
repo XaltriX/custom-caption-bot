@@ -1,7 +1,5 @@
-moviepy
-telebot
-python-telegram-bot
-ffmpeg-python
-mega
-pillow
 pyTelegramBotAPI
+requests
+opencv-python
+Pillow
+ffmpeg-python
