@@ -1,6 +1,13 @@
 import telebot
 import os
 import re
+import tempfile
+import requests
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+import ffmpeg
 
 # Your Telegram Bot API token
 TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
@@ -9,10 +16,13 @@ TOKEN = '6317227210:AAGpjnW4q6LBrpYdFNN1YrH62NcH9r_z03Q'
 bot = telebot.TeleBot(TOKEN)
 
 # Permanent thumbnail URL for the custom caption feature
-THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'  # Replace with your actual thumbnail URL
+THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'
 
 # Dictionary to store user data for custom captions
 user_data = {}
+
+# Dictionary to store message IDs for deletion
+message_ids = {}
 
 # Allowed user (your Telegram username without '@')
 ALLOWED_USER = 'i_am_yamraj'
@@ -25,17 +35,39 @@ def is_user_allowed(message):
         return False
     return True
 
+# Helper function to create a cancel button
+def get_cancel_keyboard():
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(KeyboardButton('Cancel'))
+    return keyboard
+
+# Helper function to track messages for deletion
+def track_message(user_id, message_id):
+    if user_id not in message_ids:
+        message_ids[user_id] = []
+    message_ids[user_id].append(message_id)
+
+# Helper function to delete tracked messages
+def delete_tracked_messages(user_id):
+    if user_id in message_ids:
+        for msg_id in message_ids[user_id]:
+            try:
+                bot.delete_message(user_id, msg_id)
+            except:
+                pass
+        message_ids[user_id] = []
+
 # Handler to start the bot and choose feature
 @bot.message_handler(commands=['start'])
 def start_message(message):
     if not is_user_allowed(message):
         return
-    keyboard = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    button1 = telebot.types.KeyboardButton("Custom Caption")
-    button2 = telebot.types.KeyboardButton("TeraBox Editor")
-    button3 = telebot.types.KeyboardButton("Cancel")
-    keyboard.add(button1, button2, button3)
-    bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
+    keyboard = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    button1 = KeyboardButton("Custom Caption")
+    button2 = KeyboardButton("TeraBox Editor")
+    keyboard.add(button1, button2)
+    msg = bot.send_message(message.chat.id, "Welcome! Please choose a feature:", reply_markup=keyboard)
+    track_message(message.chat.id, msg.message_id)
 
 # Handler to process text messages
 @bot.message_handler(content_types=['text'])
@@ -43,53 +75,242 @@ def handle_text(message):
     if not is_user_allowed(message):
         return
     if message.text == "Custom Caption":
-        bot.send_message(message.chat.id, "Please provide the preview link or type 'Cancel' to exit.")
-        bot.register_next_step_handler(message, handle_preview_link)
+        keyboard = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        keyboard.add("Manual Preview", "Auto Preview", "Cancel")
+        msg = bot.send_message(message.chat.id, "Please choose preview type:", reply_markup=keyboard)
+        track_message(message.chat.id, msg.message_id)
+        bot.register_next_step_handler(message, handle_preview_type)
     elif message.text == "TeraBox Editor":
-        bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
+        msg = bot.send_message(message.chat.id, "Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
+        track_message(message.chat.id, msg.message_id)
     elif message.text == "Cancel":
-        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+        delete_tracked_messages(message.chat.id)
         start_message(message)
     else:
-        bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
+        msg = bot.send_message(message.chat.id, "Please choose a valid option from the menu.")
+        track_message(message.chat.id, msg.message_id)
 
-# Handler to process the preview link for custom caption
-def handle_preview_link(message):
+def handle_preview_type(message):
     if not is_user_allowed(message):
         return
-    if message.text.lower() == "cancel":
-        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+    if message.text == "Cancel":
+        delete_tracked_messages(message.chat.id)
         start_message(message)
         return
     user_id = message.chat.id
-    preview_link = message.text
-    user_data[user_id] = {"preview_link": preview_link}
-    bot.send_message(user_id, "Please provide a custom caption for the video or type 'Cancel' to exit.")
-    bot.register_next_step_handler(message, handle_caption)
+    if message.text == "Manual Preview":
+        user_data[user_id] = {"preview_type": "manual"}
+        msg = bot.send_message(user_id, "Please provide the manual preview link:", reply_markup=get_cancel_keyboard())
+        track_message(user_id, msg.message_id)
+        bot.register_next_step_handler(message, handle_manual_preview)
+    elif message.text == "Auto Preview":
+        user_data[user_id] = {"preview_type": "auto"}
+        msg = bot.send_message(user_id, "Please send a video to generate the preview.", reply_markup=get_cancel_keyboard())
+        track_message(user_id, msg.message_id)
+        bot.register_next_step_handler(message, process_video)
+    else:
+        msg = bot.send_message(user_id, "Invalid choice. Please try again.")
+        track_message(user_id, msg.message_id)
+        bot.register_next_step_handler(message, handle_preview_type)
 
-# Handler to handle the custom caption provided by the user
-def handle_caption(message):
+def handle_manual_preview(message):
     if not is_user_allowed(message):
         return
-    if message.text.lower() == "cancel":
-        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+    if message.text == "Cancel":
+        delete_tracked_messages(message.chat.id)
         start_message(message)
         return
     user_id = message.chat.id
     if user_id in user_data:
-        caption = message.text
-        user_data[user_id]["caption"] = caption
-        bot.send_message(message.chat.id, "Please provide a link to add in the caption or type 'Cancel' to exit.")
+        user_data[user_id]["preview_link"] = message.text
+        msg = bot.send_message(user_id, "Please provide a custom caption for the video.", reply_markup=get_cancel_keyboard())
+        track_message(user_id, msg.message_id)
+        bot.register_next_step_handler(message, handle_caption)
+    else:
+        msg = bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+        track_message(message.chat.id, msg.message_id)
+
+# Handler to process the video for custom caption
+def process_video(message):
+    if not is_user_allowed(message):
+        return
+    if message.text == "Cancel":
+        delete_tracked_messages(message.chat.id)
+        start_message(message)
+        return
+    if message.content_type == 'text':
+        msg = bot.send_message(message.chat.id, "Please send a video file, not text. Try again or type 'Cancel' to exit.", reply_markup=get_cancel_keyboard())
+        track_message(message.chat.id, msg.message_id)
+        bot.register_next_step_handler(message, process_video)
+        return
+    if message.video:
+        user_id = message.chat.id
+        file_id = message.video.file_id
+        file_info = bot.get_file(file_id)
+        file_size = file_info.file_size
+        
+        # Check if file size is greater than 20 MB
+        if file_size > 20 * 1024 * 1024:
+            msg = bot.send_message(user_id, "This video is larger than 20 MB. It may take longer to process.")
+            track_message(user_id, msg.message_id)
+        
+        # Download progress
+        download_msg = bot.send_message(user_id, "Downloading video: 0%")
+        track_message(user_id, download_msg.message_id)
+        
+        temp_file_path = None
+        collage_path = None
+        
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+                temp_file_path = temp_file.name
+                
+            # Download the file in chunks
+            downloaded_size = 0
+            chunk_size = 1024 * 1024  # 1 MB chunks
+            with open(temp_file_path, 'wb') as video_file:
+                for chunk in bot.download_file(file_info.file_path):
+                    video_file.write(chunk)
+                    downloaded_size += len(chunk)
+                    progress = int(downloaded_size / file_size * 100)
+                    bot.edit_message_text(f"Downloading video: {progress}%", user_id, download_msg.message_id)
+            
+            bot.edit_message_text("Downloading video: 100%", user_id, download_msg.message_id)
+            
+            # Generate screenshots progress
+            screenshot_msg = bot.send_message(user_id, "Generating screenshots: 0%")
+            track_message(user_id, screenshot_msg.message_id)
+            screenshots = generate_screenshots(temp_file_path, user_id, screenshot_msg.message_id)
+            try:
+                bot.edit_message_text("Generating screenshots: 100%", user_id, screenshot_msg.message_id)
+            except telebot.apihelper.ApiTelegramException as e:
+                if "message is not modified" not in str(e):
+                    raise
+            
+            collage = create_collage(screenshots)
+            collage_path = f"{temp_file_path}_collage.jpg"
+            collage.save(collage_path, optimize=True, quality=95)
+            
+            # Send collage to user
+            with open(collage_path, 'rb') as collage_file:
+                collage_msg = bot.send_photo(user_id, collage_file, caption="Here's the preview collage:")
+                track_message(user_id, collage_msg.message_id)
+            
+            # Upload progress
+            upload_msg = bot.send_message(user_id, "Uploading to graph.org: 0%")
+            track_message(user_id, upload_msg.message_id)
+            graph_url = upload_to_graph(collage_path, user_id, upload_msg.message_id)
+            bot.edit_message_text("Uploading to graph.org: 100%", user_id, upload_msg.message_id)
+            
+            user_data[user_id]["preview_link"] = graph_url
+            
+            msg = bot.send_message(user_id, "Preview generated. Please provide a custom caption for the video.", reply_markup=get_cancel_keyboard())
+            track_message(user_id, msg.message_id)
+            bot.register_next_step_handler(message, handle_caption)
+        except Exception as e:
+            error_msg = bot.send_message(user_id, f"An error occurred: {str(e)}")
+            track_message(user_id, error_msg.message_id)
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+            if collage_path and os.path.exists(collage_path):
+                os.unlink(collage_path)
+    else:
+        msg = bot.send_message(message.chat.id, "Please send a video. Try again or type 'Cancel' to exit.", reply_markup=get_cancel_keyboard())
+        track_message(message.chat.id, msg.message_id)
+        bot.register_next_step_handler(message, process_video)
+
+def generate_screenshots(video_file, user_id, message_id):
+    probe = ffmpeg.probe(video_file)
+    duration = float(probe['streams'][0]['duration'])
+    num_screenshots = 5 if duration < 60 else 10
+    time_points = [i * duration / num_screenshots for i in range(num_screenshots)]
+    
+    screenshots = []
+    for i, time_point in enumerate(time_points):
+        output_file = f"screenshot_{i}.jpg"
+        (
+            ffmpeg
+            .input(video_file, ss=time_point)
+            .filter('scale', 640, -1)
+            .output(output_file, vframes=1)
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        screenshot = Image.open(output_file)
+        screenshot = resize_and_add_watermark(screenshot)
+        screenshots.append(screenshot)
+        
+        os.remove(output_file)
+        
+        progress = int((i + 1) / num_screenshots * 100)
+        bot.edit_message_text(f"Generating screenshots: {progress}%", user_id, message_id)
+    
+    return screenshots
+
+def resize_and_add_watermark(image):
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    text = "@NeonGhost_Networks"
+    text_x = (image.width - 200) // 2
+    text_y = (image.height - 20) // 2
+    draw.text((text_x, text_y), text, font=font, fill=(255, 255, 255))
+    
+    return image
+
+def create_collage(screenshots):
+    cols = 2
+    rows = (len(screenshots) + 1) // 2
+    collage_width = 640 * cols
+    collage_height = 360 * rows
+    collage = Image.new('RGB', (collage_width, collage_height))
+    
+    for i, screenshot in enumerate(screenshots):
+        x = (i % cols) * 640
+        y = (i // cols) * 360
+        collage.paste(screenshot.resize((640, 360)), (x, y))
+    
+    return collage
+
+def upload_to_graph(image_path, user_id, message_id):
+    url = "https://graph.org/upload"
+    
+    with open(image_path, "rb") as file:
+        files = {"file": file}
+        response = requests.post(url, files=files)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data[0].get("src"):
+            return f"https://graph.org{data[0]['src']}"
+        else:
+            raise Exception("Unable to retrieve image link from response")
+    else:
+        raise Exception(f"Upload failed with status code {response.status_code}")
+
+def handle_caption(message):
+    if not is_user_allowed(message):
+        return
+    if message.text == "Cancel":
+        delete_tracked_messages(message.chat.id)
+        start_message(message)
+        return
+    user_id = message.chat.id
+    if user_id in user_data:
+        user_data[user_id]["caption"] = message.text
+        msg = bot.send_message(message.chat.id, "Please provide a link to add in the caption or type 'Cancel' to exit.", reply_markup=get_cancel_keyboard())
+        track_message(user_id, msg.message_id)
         bot.register_next_step_handler(message, handle_link)
     else:
-        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+        msg = bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+        track_message(message.chat.id, msg.message_id)
 
-# Handler to handle the link provided by the user
 def handle_link(message):
     if not is_user_allowed(message):
         return
-    if message.text.lower() == "cancel":
-        bot.send_message(message.chat.id, "Process canceled. Please choose a feature from the menu.")
+    if message.text == "Cancel":
+        delete_tracked_messages(message.chat.id)
         start_message(message)
         return
     user_id = message.chat.id
@@ -98,37 +319,44 @@ def handle_link(message):
         caption = user_data[user_id]["caption"]
         link = message.text
 
-        # Format the caption with the preview link and the custom link
         formatted_caption = (
-    f"◇──◆──◇──◆  ◇──◆──◇──◆\n"
-    f"   @NeonGhost_Networks\n"
-    f"◇──◆──◇──◆  ◇──◆──◇──◆\n\n"
-    f"╰┈┈➤ 🚨 {caption} 🚨\n\n"
-    f"╰┈┈┈┈┈➤ 🔗 Preview Link: {preview_link}\n\n"
-    f"╰┈┈┈┈┈┈┈┈➤ 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n"
-)
+            f"◇──◆──◇──◆  ◇──◆──◇──◆\n"
+            f"   @NeonGhost_Networks\n"
+            f"◇──◆──◇──◆  ◇──◆──◇──◆\n\n"
+            f"╰┈┈➤ 🚨 {caption} 🚨\n\n"
+            f"╰┈┈┈┈┈➤ 🔗 Preview Link: {preview_link}\n\n"
+            f"╰┈┈┈┈┈┈┈┈➤ 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n"
+        )
 
-        # Inline keyboard for additional links
-        keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(telebot.types.InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"))
-        keyboard.add(telebot.types.InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"))
-        keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("18+ Bot🤖🔞", url="https://t.me/new_leakx_mms_bot"))
+        keyboard.add(InlineKeyboardButton("More Videos🔞🎥", url="https://t.me/+H6sxjIpsz-cwYjQ0"))
+        keyboard.add(InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-        # Send back the cover photo with the custom caption and buttons
         try:
-            bot.send_photo(user_id, THUMBNAIL_URL, caption=formatted_caption, reply_markup=keyboard)
+            final_post = bot.send_photo(user_id, THUMBNAIL_URL, caption=formatted_caption, reply_markup=keyboard)
+            delete_tracked_messages(user_id)
+            
+            # Reset user data while keeping preview type
+            preview_type = user_data[user_id]["preview_type"]
+            user_data[user_id] = {"preview_type": preview_type}
+            
+            # Automatically ask for the next video or preview link
+            if preview_type == "auto":
+                msg = bot.send_message(user_id, "Please send another video to generate the preview.", reply_markup=get_cancel_keyboard())
+                track_message(user_id, msg.message_id)
+                bot.register_next_step_handler(message, process_video)
+            else:
+                msg = bot.send_message(user_id, "Please provide another manual preview link:", reply_markup=get_cancel_keyboard())
+                track_message(user_id, msg.message_id)
+                bot.register_next_step_handler(message, handle_manual_preview)
         except Exception as e:
-            bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
-        finally:
-            # Cleanup user_data
-            del user_data[user_id]
-            # Restart the process for the next post
-            bot.send_message(user_id, "Please provide the preview link for the next post or type 'Cancel' to exit.")
-            bot.register_next_step_handler(message, handle_preview_link)
+            error_msg = bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+            track_message(user_id, error_msg.message_id)
     else:
-        bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+        msg = bot.send_message(message.chat.id, "Please start the process again by typing /start.")
+        track_message(message.chat.id, msg.message_id)
 
-# Handler to process images, videos, and GIFs with captions
 @bot.message_handler(content_types=['photo', 'video', 'document'])
 def handle_media(message):
     if not is_user_allowed(message):
@@ -141,13 +369,14 @@ def handle_media(message):
     elif media_type == 'video':
         process_media(message, 'video')
     elif media_type == 'document':
-        # Check if the document is a GIF
         if message.document.mime_type == 'image/gif':
             process_media(message, 'gif')
         else:
-            bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
+            msg = bot.send_message(message.chat.id, "Unsupported document type. Please send images, videos, or GIFs.")
+            track_message(message.chat.id, msg.message_id)
     else:
-        bot.send_message(message.chat.id, "Unsupported media type. Please send images, videos, or GIFs.")
+        msg = bot.send_message(message.chat.id, "Unsupported media type. Please send images, videos, or GIFs.")
+        track_message(message.chat.id, msg.message_id)
 
 def process_media(message, media_type):
     user_id = message.chat.id
@@ -163,7 +392,6 @@ def process_media(message, media_type):
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
-        # Save the file to a local path
         if media_type == 'photo':
             media_filename = f"media_{file_id}.jpg"
         elif media_type == 'video':
@@ -174,19 +402,18 @@ def process_media(message, media_type):
         with open(media_filename, 'wb') as media_file:
             media_file.write(downloaded_file)
 
-        # Use regex to find any link containing "terabox" in the caption
-        text = message.caption  # Get the caption text
+        text = message.caption
         if not text:
-            bot.send_message(user_id, "No caption provided. Please start again by typing /start.")
+            msg = bot.send_message(user_id, "No caption provided. Please start again by typing /start.")
+            track_message(user_id, msg.message_id)
             return
 
-        # Use regex to find all links containing "terabox" in the caption
         terabox_links = re.findall(r'https?://\S*terabox\S*', text, re.IGNORECASE)
         if not terabox_links:
-            bot.send_message(user_id, "No valid TeraBox link found in the caption. Please try again.")
+            msg = bot.send_message(user_id, "No valid TeraBox link found in the caption. Please try again.")
+            track_message(user_id, msg.message_id)
             return
 
-        # Format the caption with the TeraBox links
         formatted_caption = (
             f"⚝─────⭒─⭑─⭒──────⚝\n"
             "  👉  ​🇼​​🇪​​🇱​​🇨​​🇴​​🇲​​🇪​❗ 👈\n"
@@ -204,28 +431,25 @@ def process_media(message, media_type):
 
         formatted_caption += "─❚█═𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔═█❚─"
 
-        # Inline keyboard for additional links
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(telebot.types.InlineKeyboardButton("How To Watch & Download 🔞", url="https://t.me/HTDTeraBox/5"))
         keyboard.add(telebot.types.InlineKeyboardButton("Movie Group🔞🎥", url="https://t.me/RequestGroupNG"))
         keyboard.add(telebot.types.InlineKeyboardButton("BackUp Channel🎯", url="https://t.me/+ZgpjbYx8dGZjODI9"))
 
-        # Send back the media with the TeraBox links and buttons
         with open(media_filename, 'rb') as media:
             if media_type == 'photo':
-                bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+                final_post = bot.send_photo(user_id, media, caption=formatted_caption, reply_markup=keyboard)
             elif media_type == 'video':
-                bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+                final_post = bot.send_video(user_id, media, caption=formatted_caption, reply_markup=keyboard)
             elif media_type == 'gif':
-                bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+                final_post = bot.send_document(user_id, media, caption=formatted_caption, reply_markup=keyboard)
+        
+        delete_tracked_messages(user_id)
+        os.remove(media_filename)
 
     except Exception as e:
-        bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+        error_msg = bot.send_message(user_id, f"Sorry, there was an error processing your request: {e}")
+        track_message(user_id, error_msg.message_id)
 
-    finally:
-        # Remove the local file after sending
-        if os.path.exists(media_filename):
-            os.remove(media_filename)
-
-# Start polling for messages
+# Start the bot
 bot.polling()
