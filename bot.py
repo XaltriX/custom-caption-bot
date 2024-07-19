@@ -169,7 +169,7 @@ async def create_final_post(event, chat_id, link):
         async with session.get(THUMBNAIL_URL) as response:
             if response.status == 200:
                 thumbnail_data = await response.read()
-                thumbnail_file = await client.upload_file(thumbnail_data)
+                thumbnail_file = await client.upload_file(thumbnail_data, file_name="thumbnail.jpg")
             else:
                 await event.reply("Failed to download thumbnail. Using default image.")
                 thumbnail_file = None
