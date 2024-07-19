@@ -5,3 +5,5 @@ Pillow
 ffmpeg-python
 numpy
 moviepy
+telethon
+
