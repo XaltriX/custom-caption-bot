@@ -7,8 +7,10 @@ import tempfile
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
+from pyrogram.idle import idle
 from moviepy.editor import VideoFileClip
 import aiohttp
+from aiohttp import web
 
 # Configure logging
 logging.basicConfig(
@@ -161,8 +163,20 @@ async def upload_to_graph_org(image_paths: List[str]) -> str:
     await asyncio.sleep(2)  # Simulate upload time
     return "https://graph.org/your-screenshots"
 
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def run_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8080)))
+    await site.start()
+
 async def main():
     await app.start()
+    asyncio.create_task(run_web_server())
     logger.info("Bot started. Listening for messages...")
     await idle()
 
