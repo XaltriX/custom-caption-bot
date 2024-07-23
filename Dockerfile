@@ -1,26 +1,15 @@
-FROM python:3.11-slim-buster
+# Dockerfile
+FROM python:3.11-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Copy the dependencies file to the working directory
+# Copy requirements file and install dependencies
 COPY requirements.txt .
-
-# Install any dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the content of the local src directory to the working directory
+# Copy the rest of the application code
 COPY . .
 
-# Specify the command to run on container start
-CMD ["python", "./bot.py"]
+# Specify the command to run the bot
+CMD ["python", "bot.py"]
