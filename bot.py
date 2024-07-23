@@ -218,11 +218,11 @@ async def run_web_server():
     await site.start()
 
 async def main():
+    # Start the Pyrogram client
     async with app:
-        await app.start()
         asyncio.create_task(run_web_server())
         logger.info("Bot started. Listening for messages...")
-        await app.idle()
+        await app.run()
 
 if __name__ == "__main__":
     asyncio.run(main())
