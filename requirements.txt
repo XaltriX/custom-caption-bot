@@ -1,11 +1,3 @@
-pyTelegramBotAPI
-requests
-opencv-python-headless
-Pillow
-ffmpeg-python
-numpy
+pyrogram==2.0.106
 moviepy
-telethon
-aiohttp
-pyrogram
-tgcrypto
+Pillow
