@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "build": {
+    "docker": {
+      "file": "Dockerfile"
+    }
+  },
+  "deploy": {
+    "command": "python bot.py"
+  }
+}
