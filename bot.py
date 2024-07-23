@@ -218,10 +218,11 @@ async def run_web_server():
     await site.start()
 
 async def main():
-    await app.start()
-    asyncio.create_task(run_web_server())
-    logger.info("Bot started. Listening for messages...")
-    await app.idle()
+    async with app:
+        await app.start()
+        asyncio.create_task(run_web_server())
+        logger.info("Bot started. Listening for messages...")
+        await app.idle()
 
 if __name__ == "__main__":
     asyncio.run(main())
