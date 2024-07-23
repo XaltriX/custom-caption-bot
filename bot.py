@@ -6,7 +6,7 @@ import tempfile
 import requests
 from PIL import Image
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
 from moviepy.editor import VideoFileClip
@@ -234,7 +234,7 @@ async def handle_text(client, message):
 async def main():
     await app.start()
     logger.info("Bot started. Listening for messages...")
-    await pyrogram.idle()
+    await idle()
 
 if __name__ == "__main__":
     app.run(main())
