@@ -157,7 +157,6 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             if os.path.exists(video_path):
                 os.remove(video_path)
                 logger.info(f"Deleted video file: {video_path}")
-
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     clip = VideoFileClip(video_path)
     duration = clip.duration
