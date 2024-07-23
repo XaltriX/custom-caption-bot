@@ -38,7 +38,7 @@ async def help_command(client, message):
     help_text = (
         "Here's how to use me:\n\n"
         "1. Send me a video file.\n"
-        "2. Choose the number of screenshots you want.\n"
+        "2. Choose the number of screenshots you want (5 or 10).\n"
         "3. I'll create a collage of screenshots and send it back to you.\n\n"
         "Commands:\n"
         "/start - Start the bot\n"
@@ -191,20 +191,42 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
 def create_collage(image_paths: List[str], collage_path: str):
     try:
         images = [Image.open(image) for image in image_paths]
-        widths, heights = zip(*(i.size for i in images))
+        num_images = len(images)
+        
+        if num_images not in [5, 10]:
+            raise ValueError("This function is designed for 5 or 10 images only.")
 
-        max_width = 800  # Set a maximum width for the collage
-        scale = max_width / sum(widths)
-        new_widths = [int(w * scale) for w in widths]
-        new_heights = [int(h * scale) for h in heights]
+        # Define layout
+        if num_images == 5:
+            rows, cols = 3, 2
+            layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)]  # (col, row, span_cols, span_rows)
+        else:  # 10 images
+            rows, cols = 4, 3
+            layout = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3, 3, 1)]
 
-        collage = Image.new('RGB', (max_width, max(new_heights)))
+        # Calculate cell size
+        max_width = 800
+        cell_width = max_width // cols
+        cell_height = cell_width * 9 // 16  # Assuming 16:9 aspect ratio
 
-        x_offset = 0
-        for im, new_width, new_height in zip(images, new_widths, new_heights):
-            im_resized = im.resize((new_width, new_height))
-            collage.paste(im_resized, (x_offset, 0))
-            x_offset += new_width
+        # Create the collage image
+        collage_width = cell_width * cols
+        collage_height = cell_height * rows
+        collage = Image.new('RGB', (collage_width, collage_height))
+
+        # Place images in the collage
+        for img, pos in zip(images, layout):
+            # Resize image to fit the cell
+            img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
+            img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
+            img_resized = img.resize((img_width, img_height), Image.LANCZOS)
+            
+            # Calculate position
+            x = pos[0] * cell_width
+            y = pos[1] * cell_height
+            
+            # Paste the image
+            collage.paste(img_resized, (x, y))
 
         collage.save(collage_path)
     except Exception as e:
