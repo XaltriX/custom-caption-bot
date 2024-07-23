@@ -1,16 +1,21 @@
 import os
 import asyncio
 import logging
-import tempfile
 from typing import List
+import tempfile
+import math
 from PIL import Image
+
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
+try:
+    from pyrogram.idle import idle
+except ImportError:
+    from pyrogram import idle
 from moviepy.editor import VideoFileClip
 import aiohttp
 from aiohttp import web
-import requests
 
 # Configure logging
 logging.basicConfig(
@@ -121,17 +126,23 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
                 return
 
         try:
-            # Generate screenshots and create collage
-            collage_path = await generate_collage(video_path, num_screenshots, temp_dir, status_message)
+            # Generate screenshots with progress
+            screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
+
+            await status_message.edit_text("Creating collage...")
+
+            # Create collage
+            collage_path = os.path.join(temp_dir, "collage.jpg")
+            create_collage(screenshots, collage_path)
 
             await status_message.edit_text("Uploading collage...")
 
             # Upload collage to graph.org
-            graph_url = await upload_to_graph(collage_path, message.chat.id, message_id)
+            graph_url = await upload_to_graph_org(collage_path)
 
             # Send result to user
             await callback_query.message.reply_text(
-                f"Here is your screenshot collage: {graph_url}",
+                f"Here is your collage of {num_screenshots} screenshots: {graph_url}",
                 reply_to_message_id=message_id
             )
 
@@ -147,17 +158,17 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
                 os.remove(video_path)
                 logger.info(f"Deleted video file: {video_path}")
 
-async def generate_collage(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> str:
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     clip = VideoFileClip(video_path)
     duration = clip.duration
     interval = duration / (num_screenshots + 1)
     
-    screenshot_paths = []
+    screenshots = []
     for i in range(1, num_screenshots + 1):
         time = i * interval
         screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
         clip.save_frame(screenshot_path, t=time)
-        screenshot_paths.append(screenshot_path)
+        screenshots.append(screenshot_path)
         
         percent = (i / num_screenshots) * 100
         bar = create_progress_bar(percent)
@@ -167,44 +178,39 @@ async def generate_collage(video_path: str, num_screenshots: int, output_dir: st
             pass
     
     clip.close()
+    return screenshots
 
-    # Create a collage
-    collage_path = os.path.join(output_dir, "collage.jpg")
-    create_collage(screenshot_paths, collage_path)
-
-    return collage_path
-
-def create_collage(image_paths: List[str], output_path: str):
-    images = [Image.open(img_path) for img_path in image_paths]
+def create_collage(image_paths: List[str], collage_path: str):
+    images = [Image.open(image) for image in image_paths]
     widths, heights = zip(*(i.size for i in images))
 
-    total_width = max(widths)
-    total_height = sum(heights)
+    total_width = sum(widths)
+    max_height = max(heights)
 
-    collage = Image.new('RGB', (total_width, total_height))
+    collage = Image.new('RGB', (total_width, max_height))
 
-    y_offset = 0
-    for img in images:
-        collage.paste(img, (0, y_offset))
-        y_offset += img.height
+    x_offset = 0
+    for im in images:
+        collage.paste(im, (x_offset, 0))
+        x_offset += im.width
 
-    collage.save(output_path)
+    collage.save(collage_path)
 
-async def upload_to_graph(image_path: str, user_id: int, message_id: int) -> str:
-    url = "https://graph.org/upload"
-    
-    with open(image_path, "rb") as file:
-        files = {"file": file}
-        response = requests.post(url, files=files)
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data.get("src"):
-            return f"https://graph.org{data['src']}"
-        else:
-            raise Exception("Unable to retrieve image link from response")
-    else:
-        raise Exception(f"Upload failed with status code {response.status_code}")
+async def upload_to_graph_org(image_path: str) -> str:
+    upload_url = "https://graph.org/upload"
+    form = aiohttp.FormData()
+    form.add_field('file', open(image_path, 'rb'), filename=os.path.basename(image_path))
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(upload_url, data=form) as response:
+            if response.status == 200:
+                data = await response.json()
+                if 'url' in data:
+                    return data['url']
+                else:
+                    raise ValueError("Invalid response from graph.org")
+            else:
+                raise ValueError("Failed to upload image to graph.org")
 
 async def handle(request):
     return web.Response(text="Bot is running!")
@@ -221,7 +227,7 @@ async def main():
     await app.start()
     asyncio.create_task(run_web_server())
     logger.info("Bot started. Listening for messages...")
-    await app.idle()
+    await idle()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app.run(main())
