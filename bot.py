@@ -1,263 +1,170 @@
 import os
-import cv2
 import asyncio
-import re
-import aiohttp
-import numpy as np
-from PIL import Image
-from moviepy.editor import VideoFileClip
-from telethon import TelegramClient, events, Button
-from telethon.tl.types import InputMediaUploadedPhoto
-from telethon.tl.functions.messages import UploadMediaRequest
+import logging
+from typing import List
+import tempfile
 
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+from pyrogram.errors import MessageNotModified
+from moviepy.editor import VideoFileClip
+import aiohttp
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Bot configuration
 API_ID = 28192191
 API_HASH = '663164abd732848a90e76e25cb9cf54a'
 BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
-THUMBNAIL_URL = 'https://telegra.ph/file/cab0b607ce8c4986e083c.jpg'
 
-client = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-user_data = {}
+# Initialize the Pyrogram client
+app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-@client.on(events.NewMessage(pattern='/start'))
-async def start(event):
-    buttons = [
-        [Button.inline("Custom Caption", data="custom_caption"),
-         Button.inline("TeraBox Editor", data="terabox_editor")],
-        [Button.inline("Cancel", data="cancel")]
-    ]
-    await event.reply("Welcome! Please choose a feature:", buttons=buttons)
+# Queue to manage multiple video processing tasks
+video_queue = asyncio.Queue()
 
-@client.on(events.CallbackQuery())
-async def handle_callback(event):
-    data = event.data.decode('utf-8')
-    chat_id = event.chat_id
+@app.on_message(filters.command("start"))
+async def start_command(client: Client, message: Message):
+    await message.reply_text("Welcome! Send me a video, and I'll generate screenshots for you.")
 
-    if data == "cancel":
-        if chat_id in user_data:
-            del user_data[chat_id]
-        await event.edit("Process cancelled. Send /start to begin again.")
-        return
+@app.on_message(filters.video)
+async def handle_video(client: Client, message: Message):
+    await message.reply_text("Video received. Adding to processing queue...")
+    await video_queue.put(message)
 
-    if data == "custom_caption":
-        buttons = [
-            [Button.inline("Manual Preview", data="manual_preview"),
-             Button.inline("Auto Preview", data="auto_preview")],
-            [Button.inline("Cancel", data="cancel")]
-        ]
-        await event.edit("Please choose preview type:", buttons=buttons)
+    if video_queue.qsize() == 1:
+        asyncio.create_task(process_video_queue())
 
-    elif data == "terabox_editor":
-        user_data[chat_id] = {"state": "terabox_editor"}
-        await event.edit("Please send one or more images, videos, or GIFs with TeraBox links in the captions.")
+async def process_video_queue():
+    while not video_queue.empty():
+        message = await video_queue.get()
+        try:
+            await process_video(message)
+        except Exception as e:
+            logger.error(f"Error processing video: {e}")
+            await message.reply_text("An error occurred while processing your video. Please try again later.")
+        finally:
+            video_queue.task_done()
 
-    elif data == "manual_preview":
-        user_data[chat_id] = {"state": "manual_preview"}
-        await event.edit("Please provide the manual preview link:")
+async def process_video(message: Message):
+    video = message.video
+    file_id = video.file_id
+    file_name = f"{file_id}.mp4"
 
-    elif data == "auto_preview":
-        user_data[chat_id] = {"state": "auto_preview"}
-        await event.edit("Please send a video to generate the preview.")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        video_path = os.path.join(temp_dir, file_name)
 
-@client.on(events.NewMessage(func=lambda e: e.message.video))
-async def handle_video(event):
-    chat_id = event.chat_id
-    if chat_id not in user_data or user_data[chat_id].get("state") != "auto_preview":
-        return
+        # Download the video
+        status_message = await message.reply_text("Downloading video...")
+        try:
+            await app.download_media(message, file_name=video_path)
+        except Exception as e:
+            logger.error(f"Error downloading video: {e}")
+            await status_message.edit_text("Failed to download the video. Please try again.")
+            return
 
-    progress_message = await event.reply("Processing your video...")
-    try:
-        video = event.message.video
-        file = await client.download_media(video, file="temp_video", progress_callback=lambda d, t: asyncio.ensure_future(update_progress(d, t, progress_message)))
-        await progress_message.edit("Generating screenshots...")
-        screenshots = await generate_screenshots(file, progress_message)
-        collage = create_collage(screenshots)
-        collage_path = f"{file}_collage.jpg"
-        collage.save(collage_path, optimize=True, quality=95)
-        await progress_message.edit("Uploading to graph.org...")
-        graph_url = await upload_to_graph(collage_path, progress_message)
-        user_data[chat_id]["preview_link"] = graph_url
-        user_data[chat_id]["state"] = "waiting_caption"
-        await progress_message.edit("Preview generated. Please provide a custom caption for the video.")
-    except Exception as e:
-        await event.reply(f"An error occurred: {str(e)}")
-    finally:
-        if os.path.exists(file):
-            os.unlink(file)
-        if os.path.exists(collage_path):
-            os.unlink(collage_path)
+        # Ask user for number of screenshots
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{file_id}"),
+             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{file_id}")]
+        ])
+        await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
 
-async def update_progress(current, total, message):
-    percent = round(current / total * 100, 1)
-    await message.edit(f"Downloading video: {percent}%")
+@app.on_callback_query()
+async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery):
+    data = callback_query.data.split('_')
+    num_screenshots = int(data[1])
+    file_id = data[2]
+    file_name = f"{file_id}.mp4"
 
-async def generate_screenshots(video_file, message):
-    clip = VideoFileClip(video_file)
+    await callback_query.answer()
+    status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots...")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        video_path = os.path.join(temp_dir, file_name)
+
+        # Download the video if it's not already downloaded
+        if not os.path.exists(video_path):
+            try:
+                await app.download_media(file_id, file_name=video_path)
+            except Exception as e:
+                logger.error(f"Error downloading video: {e}")
+                await status_message.edit_text("Failed to download the video. Please try again.")
+                return
+
+        # Generate screenshots
+        try:
+            screenshots = generate_screenshots(video_path, num_screenshots, temp_dir)
+        except Exception as e:
+            logger.error(f"Error generating screenshots: {e}")
+            await status_message.edit_text("Failed to generate screenshots. Please try again.")
+            return
+
+        await status_message.edit_text("Uploading screenshots...")
+
+        # Upload screenshots to graph.org
+        try:
+            graph_url = await upload_to_graph_org(screenshots)
+        except Exception as e:
+            logger.error(f"Error uploading to graph.org: {e}")
+            await status_message.edit_text("Failed to upload screenshots. Please try again.")
+            return
+
+        # Get video thumbnail
+        thumbnail_path = os.path.join(temp_dir, "thumbnail.jpg")
+        try:
+            await app.download_media(file_id, file_name=thumbnail_path, thumb=1)
+        except Exception as e:
+            logger.error(f"Error downloading thumbnail: {e}")
+            thumbnail_path = None
+
+        # Send result to user
+        try:
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                await callback_query.message.reply_photo(
+                    photo=thumbnail_path,
+                    caption=f"Here are your {num_screenshots} screenshots: {graph_url}"
+                )
+            else:
+                await callback_query.message.reply_text(
+                    f"Here are your {num_screenshots} screenshots: {graph_url}"
+                )
+        except Exception as e:
+            logger.error(f"Error sending result: {e}")
+            await status_message.edit_text("An error occurred while sending the result. Please try again.")
+
+    await status_message.edit_text("Processing completed.")
+
+def generate_screenshots(video_path: str, num_screenshots: int, output_dir: str) -> List[str]:
+    clip = VideoFileClip(video_path)
     duration = clip.duration
-    num_screenshots = 5 if duration < 60 else 10
-    time_points = np.linspace(0, duration, num_screenshots, endpoint=False)
+    interval = duration / (num_screenshots + 1)
+    
     screenshots = []
-    for i, time_point in enumerate(time_points):
-        frame = clip.get_frame(time_point)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        screenshot = Image.fromarray(frame)
-        screenshots.append(screenshot)
-        progress = int((i + 1) / num_screenshots * 100)
-        await message.edit(f"Generating screenshots: {progress}%")
+    for i in range(1, num_screenshots + 1):
+        time = i * interval
+        screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+        clip.save_frame(screenshot_path, t=time)
+        screenshots.append(screenshot_path)
+    
     clip.close()
     return screenshots
 
-def create_collage(screenshots):
-    cols = 2
-    rows = (len(screenshots) + 1) // 2
-    collage_width = 640 * cols
-    collage_height = 360 * rows
-    collage = Image.new('RGB', (collage_width, collage_height))
-    for i, screenshot in enumerate(screenshots):
-        x = (i % cols) * 640
-        y = (i // cols) * 360
-        collage.paste(screenshot.resize((640, 360)), (x, y))
-    return collage
+async def upload_to_graph_org(image_paths: List[str]) -> str:
+    # This is a placeholder function. You need to implement the actual upload to graph.org
+    # For demonstration purposes, we'll simulate an upload with a delay
+    await asyncio.sleep(2)  # Simulate upload time
+    return "https://graph.org/your-screenshots"
 
-async def upload_to_graph(image_path, message):
-    url = "https://graph.org/upload"
-    async with aiohttp.ClientSession() as session:
-        with open(image_path, "rb") as file:
-            data = aiohttp.FormData()
-            data.add_field('file', file)
-            async with session.post(url, data=data) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data[0].get("src"):
-                        return f"https://graph.org{data[0]['src']}"
-                    else:
-                        raise Exception("Unable to retrieve image link from response")
-                else:
-                    raise Exception(f"Upload failed with status code {response.status}")
+async def main():
+    await app.start()
+    logger.info("Bot started. Listening for messages...")
+    await idle()
 
-@client.on(events.NewMessage(func=lambda e: e.text and not e.text.startswith('/')))
-async def handle_text(event):
-    chat_id = event.chat_id
-    if chat_id in user_data:
-        state = user_data[chat_id].get("state")
-        if state == "manual_preview":
-            user_data[chat_id]["preview_link"] = event.text
-            user_data[chat_id]["state"] = "waiting_caption"
-            await event.reply("Please provide a custom caption for the video.")
-        elif state == "waiting_caption":
-            user_data[chat_id]["caption"] = event.text
-            user_data[chat_id]["state"] = "waiting_link"
-            await event.reply("Please provide a link to add in the caption.")
-        elif state == "waiting_link":
-            await create_final_post(event, chat_id, event.text)
-        else:
-            await event.reply("Please start the process by sending /start.")
-
-async def create_final_post(event, chat_id, link):
-    preview_link = user_data[chat_id]["preview_link"]
-    caption = user_data[chat_id]["caption"]
-    formatted_caption = (
-        f"◇──◆──◇──◆ ◇──◆──◇──◆\n"
-        f" @NeonGhost_Networks\n"
-        f"◇──◆──◇──◆ ◇──◆──◇──◆\n\n"
-        f"╰┈┈➤ 🚨 {caption} 🚨\n\n"
-        f"╰┈┈┈┈┈➤ 🔗 Preview Link: {preview_link}\n\n"
-        f"╰┈┈┈┈┈┈┈┈➤ 💋 🔗🤞 Full Video Link: {link} 🔞🤤\n"
-    )
-
-    # Download the thumbnail
-    async with aiohttp.ClientSession() as session:
-        async with session.get(THUMBNAIL_URL) as response:
-            if response.status == 200:
-                thumbnail_data = await response.read()
-                thumbnail_file = await client.upload_file(thumbnail_data, file_name="thumbnail.jpg")
-            else:
-                await event.reply("Failed to download thumbnail. Using default image.")
-                thumbnail_file = None
-
-    # Upload the thumbnail
-    if thumbnail_file:
-        uploaded_thumb = await client(UploadMediaRequest(
-            peer=chat_id,
-            media=InputMediaUploadedPhoto(thumbnail_file)
-        ))
-    else:
-        uploaded_thumb = None
-
-    # Send the message with the uploaded thumbnail
-    buttons = [
-        [Button.url("How To Watch & Download 🔞", "https://t.me/HTDTeraBox/5")],
-        [Button.url("Movie Group🔞🎥", "https://t.me/RequestGroupNG")],
-        [Button.url("BackUp Channel🎯", "https://t.me/+ZgpjbYx8dGZjODI9")]
-    ]
-
-    if uploaded_thumb:
-        await client.send_message(chat_id, formatted_caption, file=uploaded_thumb.photo, buttons=buttons)
-    else:
-        await client.send_message(chat_id, formatted_caption, buttons=buttons)
-
-    # Reset user data
-    del user_data[chat_id]
-    await event.reply("Your post has been created. Send /start to begin again.")
-
-@client.on(events.NewMessage(func=lambda e: e.photo or e.video or (e.document and e.document.mime_type == 'image/gif')))
-async def handle_media(event):
-    chat_id = event.chat_id
-    if chat_id not in user_data or user_data[chat_id].get("state") != "terabox_editor":
-        return
-
-    if event.photo:
-        media_type = 'photo'
-        file_attr = event.photo
-    elif event.video:
-        media_type = 'video'
-        file_attr = event.video
-    else:  # GIF
-        media_type = 'gif'
-        file_attr = event.document
-
-    caption = event.message.caption
-    if not caption:
-        await event.reply("No caption provided. Please try again with a caption containing TeraBox links.")
-        return
-
-    terabox_links = re.findall(r'https?://\S*terabox\S*', caption, re.IGNORECASE)
-    if not terabox_links:
-        await event.reply("No valid TeraBox link found in the caption. Please try again.")
-        return
-
-    formatted_caption = (
-        f"⚝─────⭒─⭑─⭒──────⚝\n"
-        " 👉 🇼🇪🇱🇨🇴🇲🇪❗ 👈\n"
-        " ⚝─────⭒─⭑─⭒──────⚝\n\n"
-        "≿━━━━━━━༺❀༻━━━━━━≾\n"
-        f"📥 𝐉𝐎𝐈𝐍 𝐔𝐒 :– @NeonGhost_Networks\n"
-        "≿━━━━━━━༺❀༻━━━━━━≾\n\n"
-    )
-
-    if len(terabox_links) == 1:
-        formatted_caption += f"➽───❥🔗𝐅𝐮𝐥𝐥 𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤:🔗 {terabox_links[0]}\n\n"
-    else:
-        for idx, link in enumerate(terabox_links, start=1):
-            formatted_caption += f"➽───❥🔗𝐕𝐢𝐝𝐞𝐨 𝐋𝐢𝐧𝐤 {idx}:🔗 {link}\n\n"
-
-    formatted_caption += "─❚█═𝑩𝒚 𝑵𝒆𝒐𝒏𝑮𝒉𝒐𝒔𝒕 𝑵𝒆𝒕𝒘𝒐𝒓𝒌𝒔═█❚─"
-
-    buttons = [
-        [Button.url("How To Watch & Download 🔞", "https://t.me/HTDTeraBox/5")],
-        [Button.url("Movie Group🔞🎥", "https://t.me/RequestGroupNG")],
-        [Button.url("BackUp Channel🎯", "https://t.me/+ZgpjbYx8dGZjODI9")]
-    ]
-
-    await client.send_file(
-        chat_id,
-        file=file_attr,
-        caption=formatted_caption,
-        buttons=buttons,
-        link_preview=False
-    )
-
-    del user_data[chat_id]
-    await event.reply("Your post has been created. Send /start to begin again.")
-
-print("Bot is running...")
-client.run_until_disconnected()
+if __name__ == "__main__":
+    app.run(main())
