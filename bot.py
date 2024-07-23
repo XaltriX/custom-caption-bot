@@ -53,8 +53,8 @@ async def process_video_queue():
         try:
             await process_video(message)
         except Exception as e:
-            logger.error(f"Error processing video: {e}")
-            await message.reply_text("An error occurred while processing your video. Please try again later.")
+            logger.error(f"Error processing video: {e}", exc_info=True)
+            await message.reply_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
         finally:
             video_queue.task_done()
 
@@ -71,8 +71,8 @@ async def process_video(message: Message):
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
         except Exception as e:
-            logger.error(f"Error downloading video: {e}")
-            await status_message.edit_text("Failed to download the video. Please try again.")
+            logger.error(f"Error downloading video: {e}", exc_info=True)
+            await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
             return
 
         # Ask user for number of screenshots
@@ -91,7 +91,11 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         except MessageNotModified:
             pass
 
-    await app.download_media(message, file_name=file_path, progress=progress)
+    try:
+        await app.download_media(message, file_name=file_path, progress=progress)
+    except Exception as e:
+        logger.error(f"Error in download_video_with_progress: {e}", exc_info=True)
+        raise
 
 def create_progress_bar(percent):
     completed = '▰' * int(percent / 10)
@@ -100,116 +104,133 @@ def create_progress_bar(percent):
 
 @app.on_callback_query()
 async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery):
-    data = callback_query.data.split('_')
-    num_screenshots = int(data[1])
-    message_id = int(data[2])
-    
-    # Retrieve the original message
-    message = await app.get_messages(callback_query.message.chat.id, message_id)
-    
-    file_id = message.video.file_id
-    file_name = f"{file_id}.mp4"
-
-    await callback_query.answer()
-    status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        video_path = os.path.join(temp_dir, file_name)
-
-        # Download the video if it's not already downloaded
-        if not os.path.exists(video_path):
-            try:
-                await download_video_with_progress(message, file_id, video_path, status_message)
-            except Exception as e:
-                logger.error(f"Error downloading video: {e}")
-                await status_message.edit_text("Failed to download the video. Please try again.")
-                return
-
-        try:
-            # Generate screenshots with progress
-            screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
-
-            await status_message.edit_text("Creating collage...")
-
-            # Create collage
-            collage_path = os.path.join(temp_dir, "collage.jpg")
-            create_collage(screenshots, collage_path)
-
-            await status_message.edit_text("Uploading collage...")
-
-            # Upload collage to graph.org
-            graph_url = await upload_to_graph_org(collage_path)
-
-            # Send result to user
-            await callback_query.message.reply_text(
-                f"Here is your collage of {num_screenshots} screenshots: {graph_url}",
-                reply_to_message_id=message_id
-            )
-
-            await status_message.edit_text("Processing completed.")
-
-        except Exception as e:
-            logger.error(f"Error processing video: {e}")
-            await status_message.edit_text("An error occurred while processing. Please try again.")
-
-        finally:
-            # Clean up: delete the video file
-            if os.path.exists(video_path):
-                os.remove(video_path)
-                logger.info(f"Deleted video file: {video_path}")
-async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
-    clip = VideoFileClip(video_path)
-    duration = clip.duration
-    interval = duration / (num_screenshots + 1)
-    
-    screenshots = []
-    for i in range(1, num_screenshots + 1):
-        time = i * interval
-        screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-        clip.save_frame(screenshot_path, t=time)
-        screenshots.append(screenshot_path)
+    try:
+        data = callback_query.data.split('_')
+        num_screenshots = int(data[1])
+        message_id = int(data[2])
         
-        percent = (i / num_screenshots) * 100
-        bar = create_progress_bar(percent)
-        try:
-            await status_message.edit_text(f"Generating {num_screenshots} screenshots: {bar} {percent:.1f}%")
-        except MessageNotModified:
-            pass
-    
-    clip.close()
-    return screenshots
+        # Retrieve the original message
+        message = await app.get_messages(callback_query.message.chat.id, message_id)
+        
+        file_id = message.video.file_id
+        file_name = f"{file_id}.mp4"
+
+        await callback_query.answer()
+        status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_path = os.path.join(temp_dir, file_name)
+
+            # Download the video if it's not already downloaded
+            if not os.path.exists(video_path):
+                try:
+                    await download_video_with_progress(message, file_id, video_path, status_message)
+                except Exception as e:
+                    logger.error(f"Error downloading video: {e}", exc_info=True)
+                    await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
+                    return
+
+            try:
+                # Generate screenshots with progress
+                screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
+
+                await status_message.edit_text("Creating collage...")
+
+                # Create collage
+                collage_path = os.path.join(temp_dir, "collage.jpg")
+                create_collage(screenshots, collage_path)
+
+                await status_message.edit_text("Uploading collage...")
+
+                # Upload collage to graph.org
+                graph_url = await upload_to_graph_org(collage_path)
+
+                # Send result to user
+                await callback_query.message.reply_text(
+                    f"Here is your collage of {num_screenshots} screenshots: {graph_url}",
+                    reply_to_message_id=message_id
+                )
+
+                await status_message.edit_text("Processing completed.")
+
+            except Exception as e:
+                logger.error(f"Error processing video: {e}", exc_info=True)
+                await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
+
+            finally:
+                # Clean up: delete the video file
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    logger.info(f"Deleted video file: {video_path}")
+    except Exception as e:
+        logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
+        await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
+
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
+    try:
+        clip = VideoFileClip(video_path)
+        duration = clip.duration
+        interval = duration / (num_screenshots + 1)
+        
+        screenshots = []
+        for i in range(1, num_screenshots + 1):
+            time = i * interval
+            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+            clip.save_frame(screenshot_path, t=time)
+            screenshots.append(screenshot_path)
+            
+            percent = (i / num_screenshots) * 100
+            bar = create_progress_bar(percent)
+            try:
+                await status_message.edit_text(f"Generating {num_screenshots} screenshots: {bar} {percent:.1f}%")
+            except MessageNotModified:
+                pass
+        
+        clip.close()
+        return screenshots
+    except Exception as e:
+        logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
+        raise
 
 def create_collage(image_paths: List[str], collage_path: str):
-    images = [Image.open(image) for image in image_paths]
-    widths, heights = zip(*(i.size for i in images))
+    try:
+        images = [Image.open(image) for image in image_paths]
+        widths, heights = zip(*(i.size for i in images))
 
-    total_width = sum(widths)
-    max_height = max(heights)
+        total_width = sum(widths)
+        max_height = max(heights)
 
-    collage = Image.new('RGB', (total_width, max_height))
+        collage = Image.new('RGB', (total_width, max_height))
 
-    x_offset = 0
-    for im in images:
-        collage.paste(im, (x_offset, 0))
-        x_offset += im.width
+        x_offset = 0
+        for im in images:
+            collage.paste(im, (x_offset, 0))
+            x_offset += im.width
 
-    collage.save(collage_path)
+        collage.save(collage_path)
+    except Exception as e:
+        logger.error(f"Error in create_collage: {e}", exc_info=True)
+        raise
 
 async def upload_to_graph_org(image_path: str) -> str:
     upload_url = "https://graph.org/upload"
     form = aiohttp.FormData()
     form.add_field('file', open(image_path, 'rb'), filename=os.path.basename(image_path))
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(upload_url, data=form) as response:
-            if response.status == 200:
-                data = await response.json()
-                if 'url' in data:
-                    return data['url']
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(upload_url, data=form) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if 'url' in data:
+                        return data['url']
+                    else:
+                        raise ValueError("Invalid response from graph.org")
                 else:
-                    raise ValueError("Invalid response from graph.org")
-            else:
-                raise ValueError("Failed to upload image to graph.org")
+                    raise ValueError(f"Failed to upload image to graph.org. Status: {response.status}")
+    except Exception as e:
+        logger.error(f"Error in upload_to_graph_org: {e}", exc_info=True)
+        raise
 
 async def handle(request):
     return web.Response(text="Bot is running!")
