@@ -39,7 +39,7 @@ async def help_command(client, message):
         "Here's how to use me:\n\n"
         "1. Send me a video file.\n"
         "2. Choose the number of screenshots you want (5 or 10).\n"
-        "3. I'll create a collage of screenshots and send it back to you.\n\n"
+        "3. I'll create a high-quality collage of screenshots and send it back to you.\n\n"
         "Commands:\n"
         "/start - Start the bot\n"
         "/help - Show this help message"
@@ -131,7 +131,7 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
                 # Generate screenshots with progress
                 screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
-                await status_message.edit_text("Creating collage...")
+                await status_message.edit_text("Creating high-quality collage...")
 
                 # Create collage
                 collage_path = os.path.join(temp_dir, "collage.jpg")
@@ -144,7 +144,7 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
                 # Send result to user
                 await callback_query.message.reply_text(
-                    f"Here is your collage of {num_screenshots} screenshots: {graph_url}",
+                    f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
                     reply_to_message_id=message_id
                 )
 
@@ -204,11 +204,15 @@ def create_collage(image_paths: List[str], collage_path: str):
             rows, cols = 3, 2
             layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)]  # (col, row, span_cols, span_rows)
         else:  # 10 images
-            rows, cols = 4, 3
-            layout = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3, 3, 1)]
+            rows, cols = 3, 4
+            layout = [
+                (0, 0), (1, 0), (2, 0), (3, 0),
+                (0, 1), (1, 1), (2, 1), (3, 1),
+                (0, 2, 2, 1), (2, 2, 2, 1)
+            ]
 
         # Calculate cell size based on the aspect ratio
-        max_dimension = 800
+        max_dimension = 1600  # Increased for higher quality
         if aspect_ratio >= 1:  # Landscape or square
             cell_width = max_dimension // cols
             cell_height = int(cell_width / aspect_ratio)
@@ -235,7 +239,7 @@ def create_collage(image_paths: List[str], collage_path: str):
             # Paste the image
             collage.paste(img_resized, (x, y))
 
-        collage.save(collage_path)
+        collage.save(collage_path, quality=95)  # Increased quality
     except Exception as e:
         logger.error(f"Error in create_collage: {e}", exc_info=True)
         raise
