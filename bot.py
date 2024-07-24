@@ -196,6 +196,9 @@ def create_collage(image_paths: List[str], collage_path: str):
         if num_images not in [5, 10]:
             raise ValueError("This function is designed for 5 or 10 images only.")
 
+        # Get the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
+        aspect_ratio = images[0].width / images[0].height
+
         # Define layout
         if num_images == 5:
             rows, cols = 3, 2
@@ -204,10 +207,14 @@ def create_collage(image_paths: List[str], collage_path: str):
             rows, cols = 4, 3
             layout = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3, 3, 1)]
 
-        # Calculate cell size
-        max_width = 800
-        cell_width = max_width // cols
-        cell_height = cell_width * 9 // 16  # Assuming 16:9 aspect ratio
+        # Calculate cell size based on the aspect ratio
+        max_dimension = 800
+        if aspect_ratio >= 1:  # Landscape or square
+            cell_width = max_dimension // cols
+            cell_height = int(cell_width / aspect_ratio)
+        else:  # Portrait
+            cell_height = max_dimension // rows
+            cell_width = int(cell_height * aspect_ratio)
 
         # Create the collage image
         collage_width = cell_width * cols
