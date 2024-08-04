@@ -26,6 +26,9 @@ BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
 # Initialize the Pyrogram client
 app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Create a persistent temporary directory
+temp_dir = tempfile.mkdtemp()
+
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
     await message.reply_text("Welcome! I'm the Screenshot Bot. Send me a video, and I'll generate screenshots for you.")
@@ -47,25 +50,24 @@ async def help_command(client, message):
 async def handle_video(client, message):
     status_message = await message.reply_text("Video received. Downloading: 0%")
     
-    with tempfile.TemporaryDirectory() as temp_dir:
-        file_id = message.video.file_id
-        file_name = f"{file_id}.mp4"
-        video_path = os.path.join(temp_dir, file_name)
+    file_id = message.video.file_id
+    file_name = f"{file_id}.mp4"
+    video_path = os.path.join(temp_dir, file_name)
 
-        try:
-            # Download the video
-            await download_video_with_progress(message, file_id, video_path, status_message)
+    try:
+        # Download the video
+        await download_video_with_progress(message, file_id, video_path, status_message)
 
-            # Ask user for number of screenshots
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}_{temp_dir}"),
-                 InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}_{temp_dir}")]
-            ])
-            await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
+        # Ask user for number of screenshots
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}_{file_name}"),
+             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}_{file_name}")]
+        ])
+        await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
 
-        except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
-            await status_message.edit_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
+    except Exception as e:
+        logger.error(f"Error processing video: {e}", exc_info=True)
+        await status_message.edit_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
 
 async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
@@ -83,15 +85,11 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
         message_id = int(data[2])
-        temp_dir = data[3]
+        file_name = data[3]
         
         await callback_query.answer()
         status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
 
-        # Retrieve the original message
-        message = await app.get_messages(callback_query.message.chat.id, message_id)
-        file_id = message.video.file_id
-        file_name = f"{file_id}.mp4"
         video_path = os.path.join(temp_dir, file_name)
 
         try:
@@ -101,7 +99,7 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             await status_message.edit_text("Creating high-quality collage...")
 
             # Create collage
-            collage_path = os.path.join(temp_dir, "collage.jpg")
+            collage_path = os.path.join(temp_dir, f"collage_{file_name}.jpg")
             create_collage(screenshots, collage_path)
 
             await status_message.edit_text("Uploading collage...")
@@ -232,4 +230,9 @@ async def main():
     await idle()
 
 if __name__ == "__main__":
-    app.run(main())
+    try:
+        app.run(main())
+    finally:
+        # Clean up the temporary directory when the bot exits
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
