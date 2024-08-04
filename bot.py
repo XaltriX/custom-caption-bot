@@ -23,47 +23,31 @@ API_ID = 28192191
 API_HASH = '663164abd732848a90e76e25cb9cf54a'
 BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
 
-# Bot capacity
-MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50 MB
-
 # Initialize the Pyrogram client
 app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Queue to manage multiple video processing tasks
 video_queue = asyncio.Queue()
 
-# Dictionary to store downloaded video paths
-downloaded_videos = {}
-
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
-    await message.reply_text(f"Welcome! I'm the Screenshot Bot. Send me a video (up to {MAX_VIDEO_SIZE // (1024 * 1024)} MB), and I'll generate screenshots for you.")
+    await message.reply_text("Welcome! I'm the Screenshot Bot. Send me a video, and I'll generate screenshots for you.")
 
 @app.on_message(filters.command("help"))
 async def help_command(client, message):
     help_text = (
-        f"Here's how to use me:\n\n"
-        f"1. Send me a video file (up to {MAX_VIDEO_SIZE // (1024 * 1024)} MB).\n"
+        "Here's how to use me:\n\n"
+        "1. Send me a video file.\n"
         "2. Choose the number of screenshots you want (5 or 10).\n"
         "3. I'll create a high-quality collage of screenshots and send it back to you.\n\n"
         "Commands:\n"
         "/start - Start the bot\n"
-        "/help - Show this help message\n"
-        "/capacity - Show the bot's capacity"
+        "/help - Show this help message"
     )
     await message.reply_text(help_text)
 
-@app.on_message(filters.command("capacity"))
-async def capacity_command(client, message):
-    capacity_text = f"I can handle video files up to {MAX_VIDEO_SIZE // (1024 * 1024)} MB in size."
-    await message.reply_text(capacity_text)
-
 @app.on_message(filters.video)
 async def handle_video(client, message):
-    if message.video.file_size > MAX_VIDEO_SIZE:
-        await message.reply_text(f"Sorry, this video is too large. I can only handle videos up to {MAX_VIDEO_SIZE // (1024 * 1024)} MB.")
-        return
-
     await message.reply_text("Video received. Processing will begin shortly...")
     await video_queue.put(message)
 
@@ -98,9 +82,6 @@ async def process_video(message: Message):
             await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
             return
 
-        # Store the downloaded video path
-        downloaded_videos[message.id] = video_path
-
         # Ask user for number of screenshots
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}"),
@@ -125,48 +106,59 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         num_screenshots = int(data[1])
         message_id = int(data[2])
         
+        # Retrieve the original message
+        message = await app.get_messages(callback_query.message.chat.id, message_id)
+        
+        file_id = message.video.file_id
+        file_name = f"{file_id}.mp4"
+
         await callback_query.answer()
         status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
 
-        video_path = downloaded_videos.get(message_id)
-        if not video_path:
-            await status_message.edit_text("Error: Video not found. Please try uploading again.")
-            return
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_path = os.path.join(temp_dir, file_name)
 
-        try:
-            # Generate screenshots with progress
-            screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, os.path.dirname(video_path), status_message)
+            # Download the video if it's not already downloaded
+            if not os.path.exists(video_path):
+                try:
+                    await download_video_with_progress(message, file_id, video_path, status_message)
+                except Exception as e:
+                    logger.error(f"Error downloading video: {e}", exc_info=True)
+                    await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
+                    return
 
-            await status_message.edit_text("Creating high-quality collage...")
+            try:
+                # Generate screenshots with progress
+                screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
-            # Create collage
-            collage_path = os.path.join(os.path.dirname(video_path), "collage.jpg")
-            create_collage(screenshots, collage_path)
+                await status_message.edit_text("Creating high-quality collage...")
 
-            await status_message.edit_text("Uploading collage...")
+                # Create collage
+                collage_path = os.path.join(temp_dir, "collage.jpg")
+                create_collage(screenshots, collage_path)
 
-            # Upload collage to graph.org
-            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
+                await status_message.edit_text("Uploading collage...")
 
-            # Send result to user
-            await callback_query.message.reply_text(
-                f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
-                reply_to_message_id=message_id
-            )
+                # Upload collage to graph.org
+                graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
 
-            await status_message.edit_text("Processing completed.")
+                # Send result to user
+                await callback_query.message.reply_text(
+                    f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
+                    reply_to_message_id=message_id
+                )
 
-        except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
-            await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
+                await status_message.edit_text("Processing completed.")
 
-        finally:
-            # Clean up: delete the video file and remove from dictionary
-            if os.path.exists(video_path):
-                os.remove(video_path)
-                logger.info(f"Deleted video file: {video_path}")
-            downloaded_videos.pop(message_id, None)
+            except Exception as e:
+                logger.error(f"Error processing video: {e}", exc_info=True)
+                await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
 
+            finally:
+                # Clean up: delete the video file
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    logger.info(f"Deleted video file: {video_path}")
     except Exception as e:
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
         await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
@@ -268,7 +260,7 @@ def upload_to_graph(image_path, user_id, message_id):
     else:
         raise Exception(f"Upload failed with status code {response.status_code}")
 
-@app.on_message(filters.text & ~filters.command(["start", "help", "capacity"]))
+@app.on_message(filters.text & ~filters.command(["start", "help"]))
 async def handle_text(client, message):
     await message.reply_text("I can only process videos. Please send me a video file or use /help for more information.")
 
