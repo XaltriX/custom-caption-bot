@@ -26,9 +26,6 @@ BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
 # Initialize the Pyrogram client
 app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Queue to manage multiple video processing tasks
-video_queue = asyncio.Queue()
-
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
     await message.reply_text("Welcome! I'm the Screenshot Bot. Send me a video, and I'll generate screenshots for you.")
@@ -48,46 +45,27 @@ async def help_command(client, message):
 
 @app.on_message(filters.video)
 async def handle_video(client, message):
-    await message.reply_text("Video received. Processing will begin shortly...")
-    await video_queue.put(message)
-
-    if video_queue.qsize() == 1:
-        asyncio.create_task(process_video_queue())
-
-async def process_video_queue():
-    while not video_queue.empty():
-        message = await video_queue.get()
-        try:
-            await process_video(message)
-        except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
-            await message.reply_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
-        finally:
-            video_queue.task_done()
-
-async def process_video(message: Message):
-    video = message.video
-    file_id = video.file_id
-    file_name = f"{file_id}.mp4"
-
+    status_message = await message.reply_text("Video received. Downloading: 0%")
+    
     with tempfile.TemporaryDirectory() as temp_dir:
+        file_id = message.video.file_id
+        file_name = f"{file_id}.mp4"
         video_path = os.path.join(temp_dir, file_name)
 
-        # Download the video with progress
-        status_message = await message.reply_text("Downloading video: 0%")
         try:
+            # Download the video
             await download_video_with_progress(message, file_id, video_path, status_message)
-        except Exception as e:
-            logger.error(f"Error downloading video: {e}", exc_info=True)
-            await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
-            return
 
-        # Ask user for number of screenshots
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}"),
-             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}")]
-        ])
-        await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
+            # Ask user for number of screenshots
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}_{temp_dir}"),
+                 InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}_{temp_dir}")]
+            ])
+            await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
+
+        except Exception as e:
+            logger.error(f"Error processing video: {e}", exc_info=True)
+            await status_message.edit_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
 
 async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
@@ -105,60 +83,44 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
         message_id = int(data[2])
+        temp_dir = data[3]
         
-        # Retrieve the original message
-        message = await app.get_messages(callback_query.message.chat.id, message_id)
-        
-        file_id = message.video.file_id
-        file_name = f"{file_id}.mp4"
-
         await callback_query.answer()
         status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            video_path = os.path.join(temp_dir, file_name)
+        # Retrieve the original message
+        message = await app.get_messages(callback_query.message.chat.id, message_id)
+        file_id = message.video.file_id
+        file_name = f"{file_id}.mp4"
+        video_path = os.path.join(temp_dir, file_name)
 
-            # Download the video if it's not already downloaded
-            if not os.path.exists(video_path):
-                try:
-                    await download_video_with_progress(message, file_id, video_path, status_message)
-                except Exception as e:
-                    logger.error(f"Error downloading video: {e}", exc_info=True)
-                    await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
-                    return
+        try:
+            # Generate screenshots with progress
+            screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
-            try:
-                # Generate screenshots with progress
-                screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
+            await status_message.edit_text("Creating high-quality collage...")
 
-                await status_message.edit_text("Creating high-quality collage...")
+            # Create collage
+            collage_path = os.path.join(temp_dir, "collage.jpg")
+            create_collage(screenshots, collage_path)
 
-                # Create collage
-                collage_path = os.path.join(temp_dir, "collage.jpg")
-                create_collage(screenshots, collage_path)
+            await status_message.edit_text("Uploading collage...")
 
-                await status_message.edit_text("Uploading collage...")
+            # Upload collage to graph.org
+            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
 
-                # Upload collage to graph.org
-                graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
+            # Send result to user
+            await callback_query.message.reply_text(
+                f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
+                reply_to_message_id=message_id
+            )
 
-                # Send result to user
-                await callback_query.message.reply_text(
-                    f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
-                    reply_to_message_id=message_id
-                )
+            await status_message.edit_text("Processing completed.")
 
-                await status_message.edit_text("Processing completed.")
+        except Exception as e:
+            logger.error(f"Error processing video: {e}", exc_info=True)
+            await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
 
-            except Exception as e:
-                logger.error(f"Error processing video: {e}", exc_info=True)
-                await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
-
-            finally:
-                # Clean up: delete the video file
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                    logger.info(f"Deleted video file: {video_path}")
     except Exception as e:
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
         await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
