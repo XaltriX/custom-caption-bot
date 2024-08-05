@@ -6,6 +6,7 @@ import tempfile
 import requests
 from PIL import Image
 import cv2
+import ffmpeg
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
@@ -94,6 +95,10 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
             logger.info(f"Video downloaded successfully. Path: {video_path}, Size: {os.path.getsize(video_path)} bytes")
 
+            # Validate the video file
+            if not is_valid_video(video_path):
+                raise ValueError("The video file appears to be corrupt or incomplete. Please try uploading it again.")
+
             # Generate screenshots
             await status_message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
             screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
@@ -144,6 +149,14 @@ async def download_video_with_progress(client: Client, file_id: str, file_path: 
 
     await client.download_media(file_id, file_name=file_path, progress=progress)
 
+def is_valid_video(video_path: str) -> bool:
+    try:
+        probe = ffmpeg.probe(video_path)
+        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+        return video_stream is not None
+    except ffmpeg.Error:
+        return False
+
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
         cap = cv2.VideoCapture(video_path)
@@ -156,10 +169,10 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         
         screenshots = []
         attempts = 0
-        max_attempts = num_screenshots * 2  # Allow up to twice as many attempts as requested screenshots
+        max_attempts = num_screenshots * 5  # Allow up to five times as many attempts as requested screenshots
 
         while len(screenshots) < num_screenshots and attempts < max_attempts:
-            time = (attempts + 1) * duration / (num_screenshots + 1)
+            time = (attempts + 1) * duration / (max_attempts + 1)
             frame_number = int(time * fps)
             
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
