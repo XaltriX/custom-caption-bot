@@ -6,7 +6,7 @@ import tempfile
 import requests
 from PIL import Image
 import cv2
-import ffmpeg
+import subprocess
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
@@ -52,11 +52,9 @@ async def handle_video(client, message):
     file_id = message.video.file_id
     video_id = message.id
 
-    # Create a shorter callback data
     callback_data_5 = f"ss_5_{video_id}"
     callback_data_10 = f"ss_10_{video_id}"
 
-    # Ask user for number of screenshots before downloading
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("5 screenshots", callback_data=callback_data_5),
          InlineKeyboardButton("10 screenshots", callback_data=callback_data_10)]
@@ -75,7 +73,6 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         num_screenshots = int(data[1])
         video_id = int(data[2])
         
-        # Retrieve the file_id from the original message
         original_message = await client.get_messages(callback_query.message.chat.id, video_id)
         file_id = original_message.video.file_id
         
@@ -86,20 +83,16 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         video_path = os.path.join(temp_dir, file_name)
 
         try:
-            # Download the video
             await download_video_with_progress(client, file_id, video_path, status_message)
 
-            # Check if the file exists and log its details
             if not os.path.exists(video_path):
                 raise FileNotFoundError(f"Downloaded video file not found: {video_path}")
 
             logger.info(f"Video downloaded successfully. Path: {video_path}, Size: {os.path.getsize(video_path)} bytes")
 
-            # Validate the video file
             if not is_valid_video(video_path):
                 raise ValueError("The video file appears to be corrupt or incomplete. Please try uploading it again.")
 
-            # Generate screenshots
             await status_message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
             screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
@@ -108,16 +101,13 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
             await status_message.edit_text("Creating high-quality collage...")
 
-            # Create collage
             collage_path = os.path.join(temp_dir, f"collage_{file_name}.jpg")
             create_collage(screenshots, collage_path)
 
             await status_message.edit_text("Uploading collage...")
 
-            # Upload collage to graph.org
             graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, video_id)
 
-            # Send result to user
             await callback_query.message.reply_text(
                 f"Here is your high-quality collage of {len(screenshots)} screenshots: {graph_url}",
                 reply_to_message_id=video_id
@@ -141,20 +131,28 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
 async def download_video_with_progress(client: Client, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
-        percent = (current / total) * 100
-        try:
-            await status_message.edit_text(f"Downloading video: {percent:.1f}%")
-        except MessageNotModified:
-            pass
+        if total > 0:
+            percent = (current / total) * 100
+            try:
+                await status_message.edit_text(f"Downloading video: {percent:.1f}%")
+            except MessageNotModified:
+                pass
+        else:
+            await status_message.edit_text("Downloading video: Size unknown")
 
     await client.download_media(file_id, file_name=file_path, progress=progress)
 
 def is_valid_video(video_path: str) -> bool:
     try:
-        probe = ffmpeg.probe(video_path)
-        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        return video_stream is not None
-    except ffmpeg.Error:
+        result = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', 
+                                 '-count_packets', '-show_entries', 'stream=nb_read_packets', 
+                                 '-of', 'csv=p=0', video_path], 
+                                capture_output=True, text=True)
+        return int(result.stdout.strip()) > 0
+    except subprocess.CalledProcessError:
+        return False
+    except Exception as e:
+        logger.error(f"Error validating video: {e}")
         return False
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
@@ -169,7 +167,7 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         
         screenshots = []
         attempts = 0
-        max_attempts = num_screenshots * 5  # Allow up to five times as many attempts as requested screenshots
+        max_attempts = num_screenshots * 5
 
         while len(screenshots) < num_screenshots and attempts < max_attempts:
             time = (attempts + 1) * duration / (max_attempts + 1)
@@ -213,10 +211,8 @@ def create_collage(image_paths: List[str], collage_path: str):
         if num_images < 2:
             raise ValueError("At least 2 images are required to create a collage")
 
-        # Get the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
         aspect_ratio = images[0].width / images[0].height
 
-        # Define layout
         if num_images <= 5:
             rows, cols = 3, 2
             layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)][:num_images]
@@ -228,35 +224,29 @@ def create_collage(image_paths: List[str], collage_path: str):
                 (0, 2, 2, 1), (2, 2, 2, 1)
             ][:num_images]
 
-        # Calculate cell size based on the aspect ratio
-        max_dimension = 1600  # Increased for higher quality
-        if aspect_ratio >= 1:  # Landscape or square
+        max_dimension = 1600
+        if aspect_ratio >= 1:
             cell_width = max_dimension // cols
             cell_height = int(cell_width / aspect_ratio)
-        else:  # Portrait
+        else:
             cell_height = max_dimension // rows
             cell_width = int(cell_height * aspect_ratio)
 
-        # Create the collage image
         collage_width = cell_width * cols
         collage_height = cell_height * rows
         collage = Image.new('RGB', (collage_width, collage_height))
 
-        # Place images in the collage
         for img, pos in zip(images, layout):
-            # Resize image to fit the cell
             img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
             img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
             img_resized = img.resize((img_width, img_height), Image.LANCZOS)
             
-            # Calculate position
             x = pos[0] * cell_width
             y = pos[1] * cell_height
             
-            # Paste the image
             collage.paste(img_resized, (x, y))
 
-        collage.save(collage_path, quality=95)  # Increased quality
+        collage.save(collage_path, quality=95)
     except Exception as e:
         logger.error(f"Error in create_collage: {e}", exc_info=True)
         raise
@@ -290,6 +280,5 @@ if __name__ == "__main__":
     try:
         app.run(main())
     finally:
-        # Clean up the temporary directory when the bot exits
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
