@@ -5,11 +5,11 @@ from typing import List
 import tempfile
 import requests
 from PIL import Image
+import cv2
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
-from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
@@ -138,16 +138,23 @@ async def download_video_with_progress(client: Client, file_id: str, file_path: 
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
-        clip = VideoFileClip(video_path)
-        duration = clip.duration
-        interval = duration / (num_screenshots + 1)
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        duration = total_frames / fps
         
         screenshots = []
         for i in range(1, num_screenshots + 1):
-            time = i * interval
-            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-            clip.save_frame(screenshot_path, t=time)
-            screenshots.append(screenshot_path)
+            time = i * duration / (num_screenshots + 1)
+            frame_number = int(time * fps)
+            
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = cap.read()
+            
+            if ret:
+                screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+                cv2.imwrite(screenshot_path, frame)
+                screenshots.append(screenshot_path)
             
             percent = (i / num_screenshots) * 100
             try:
@@ -155,7 +162,7 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
             except MessageNotModified:
                 pass
         
-        clip.close()
+        cap.release()
         return screenshots
     except Exception as e:
         logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
