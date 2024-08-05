@@ -49,7 +49,7 @@ async def help_command(client, message):
 @app.on_message(filters.video)
 async def handle_video(client, message):
     file_id = message.video.file_id
-    video_id = message.id  # Changed from f"v{message.id}" to just message.id
+    video_id = message.id
 
     # Create a shorter callback data
     callback_data_5 = f"ss_5_{video_id}"
@@ -86,7 +86,7 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
         try:
             # Download the video
-            await download_video_with_progress(callback_query.message, file_id, video_path, status_message)
+            await download_video_with_progress(client, file_id, video_path, status_message)
 
             # Check if the file exists and log its details
             if not os.path.exists(video_path):
@@ -126,7 +126,7 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
         await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
 
-async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
+async def download_video_with_progress(client: Client, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
         percent = (current / total) * 100
         try:
@@ -134,7 +134,7 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         except MessageNotModified:
             pass
 
-    await message.bot.download_media(file_id, file_name=file_path, progress=progress)
+    await client.download_media(file_id, file_name=file_path, progress=progress)
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
