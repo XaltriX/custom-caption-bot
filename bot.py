@@ -93,23 +93,23 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             if not is_valid_video(video_path):
                 raise ValueError("The video file appears to be corrupt or incomplete. Please try uploading it again.")
 
-            await status_message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
+            await status_message.edit_text(f"Generating screenshots: 0%")
             screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
-            if len(screenshots) < num_screenshots:
-                logger.warning(f"Only {len(screenshots)} screenshots could be generated")
+            if len(screenshots) == 0:
+                raise ValueError("No screenshots could be generated. The video might be corrupt or empty.")
 
-            await status_message.edit_text("Creating high-quality collage...")
+            await status_message.edit_text("Creating high-quality image...")
 
-            collage_path = os.path.join(temp_dir, f"collage_{file_name}.jpg")
-            create_collage(screenshots, collage_path)
+            result_path = os.path.join(temp_dir, f"result_{file_name}.jpg")
+            create_result_image(screenshots, result_path)
 
-            await status_message.edit_text("Uploading collage...")
+            await status_message.edit_text("Uploading image...")
 
-            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, video_id)
+            graph_url = await asyncio.to_thread(upload_to_graph, result_path, callback_query.from_user.id, video_id)
 
             await callback_query.message.reply_text(
-                f"Here is your high-quality collage of {len(screenshots)} screenshots: {graph_url}",
+                f"Here is your high-quality image with {len(screenshots)} screenshot(s): {graph_url}",
                 reply_to_message_id=video_id
             )
 
@@ -183,7 +183,7 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
                 
                 percent = (len(screenshots) / num_screenshots) * 100
                 try:
-                    await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
+                    await status_message.edit_text(f"Generating screenshots: {percent:.1f}%")
                 except MessageNotModified:
                     pass
             else:
@@ -193,9 +193,7 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         
         cap.release()
         
-        if not screenshots:
-            raise ValueError("No screenshots could be generated. The video might be corrupt or empty.")
-        elif len(screenshots) < num_screenshots:
+        if len(screenshots) < num_screenshots:
             logger.warning(f"Only {len(screenshots)} out of {num_screenshots} screenshots could be generated.")
         
         return screenshots
@@ -203,52 +201,54 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
         raise
 
-def create_collage(image_paths: List[str], collage_path: str):
+def create_result_image(image_paths: List[str], result_path: str):
     try:
         images = [Image.open(image) for image in image_paths]
         num_images = len(images)
         
-        if num_images < 2:
-            raise ValueError("At least 2 images are required to create a collage")
-
-        aspect_ratio = images[0].width / images[0].height
-
-        if num_images <= 5:
-            rows, cols = 3, 2
-            layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)][:num_images]
+        if num_images == 1:
+            # If only one screenshot, just save it as is
+            images[0].save(result_path, quality=95)
         else:
-            rows, cols = 3, 4
-            layout = [
-                (0, 0), (1, 0), (2, 0), (3, 0),
-                (0, 1), (1, 1), (2, 1), (3, 1),
-                (0, 2, 2, 1), (2, 2, 2, 1)
-            ][:num_images]
+            # Create a collage
+            aspect_ratio = images[0].width / images[0].height
 
-        max_dimension = 1600
-        if aspect_ratio >= 1:
-            cell_width = max_dimension // cols
-            cell_height = int(cell_width / aspect_ratio)
-        else:
-            cell_height = max_dimension // rows
-            cell_width = int(cell_height * aspect_ratio)
+            if num_images <= 5:
+                rows, cols = 3, 2
+                layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)][:num_images]
+            else:
+                rows, cols = 3, 4
+                layout = [
+                    (0, 0), (1, 0), (2, 0), (3, 0),
+                    (0, 1), (1, 1), (2, 1), (3, 1),
+                    (0, 2, 2, 1), (2, 2, 2, 1)
+                ][:num_images]
 
-        collage_width = cell_width * cols
-        collage_height = cell_height * rows
-        collage = Image.new('RGB', (collage_width, collage_height))
+            max_dimension = 1600
+            if aspect_ratio >= 1:
+                cell_width = max_dimension // cols
+                cell_height = int(cell_width / aspect_ratio)
+            else:
+                cell_height = max_dimension // rows
+                cell_width = int(cell_height * aspect_ratio)
 
-        for img, pos in zip(images, layout):
-            img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
-            img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
-            img_resized = img.resize((img_width, img_height), Image.LANCZOS)
-            
-            x = pos[0] * cell_width
-            y = pos[1] * cell_height
-            
-            collage.paste(img_resized, (x, y))
+            collage_width = cell_width * cols
+            collage_height = cell_height * rows
+            collage = Image.new('RGB', (collage_width, collage_height))
 
-        collage.save(collage_path, quality=95)
+            for img, pos in zip(images, layout):
+                img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
+                img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
+                img_resized = img.resize((img_width, img_height), Image.LANCZOS)
+                
+                x = pos[0] * cell_width
+                y = pos[1] * cell_height
+                
+                collage.paste(img_resized, (x, y))
+
+            collage.save(result_path, quality=95)
     except Exception as e:
-        logger.error(f"Error in create_collage: {e}", exc_info=True)
+        logger.error(f"Error in create_result_image: {e}", exc_info=True)
         raise
 
 def upload_to_graph(image_path, user_id, message_id):
