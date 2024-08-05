@@ -48,39 +48,15 @@ async def help_command(client, message):
 
 @app.on_message(filters.video)
 async def handle_video(client, message):
-    status_message = await message.reply_text("Video received. Downloading: 0%")
-    
     file_id = message.video.file_id
-    file_name = f"{file_id}.mp4"
-    video_path = os.path.join(temp_dir, file_name)
+    video_id = f"v{message.id}"
 
-    try:
-        # Download the video
-        await download_video_with_progress(message, file_id, video_path, status_message)
-
-        # Generate a unique identifier for this video
-        video_id = f"v{message.id}"
-
-        # Ask user for number of screenshots
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{video_id}"),
-             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{video_id}")]
-        ])
-        await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
-
-    except Exception as e:
-        logger.error(f"Error processing video: {e}", exc_info=True)
-        await status_message.edit_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
-
-async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
-    async def progress(current, total):
-        percent = (current / total) * 100
-        try:
-            await status_message.edit_text(f"Downloading video: {percent:.1f}%")
-        except MessageNotModified:
-            pass
-
-    await message.download(file_name=file_path, progress=progress)
+    # Ask user for number of screenshots before downloading
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{video_id}_{file_id}"),
+         InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{video_id}_{file_id}")]
+    ])
+    await message.reply_text("How many screenshots do you want?", reply_markup=keyboard)
 
 @app.on_callback_query()
 async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery):
@@ -88,16 +64,27 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
         video_id = data[2]
+        file_id = data[3]
         
         await callback_query.answer()
-        status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
+        status_message = await callback_query.message.reply_text("Processing started. Downloading video: 0%")
 
-        # Reconstruct the file name from the video_id
         file_name = f"{video_id[1:]}.mp4"
         video_path = os.path.join(temp_dir, file_name)
 
         try:
-            # Generate screenshots with progress
+            # Download the video
+            await download_video_with_progress(callback_query.message, file_id, video_path, status_message)
+
+            # Check if the file exists and log its details
+            if not os.path.exists(video_path):
+                logger.error(f"Video file not found after download. Path: {video_path}")
+                raise FileNotFoundError(f"Downloaded video file not found: {video_path}")
+
+            logger.info(f"Video downloaded successfully. Path: {video_path}, Size: {os.path.getsize(video_path)} bytes")
+
+            # Generate screenshots
+            await status_message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
             screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
             await status_message.edit_text("Creating high-quality collage...")
@@ -126,6 +113,16 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
     except Exception as e:
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
         await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
+
+async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
+    async def progress(current, total):
+        percent = (current / total) * 100
+        try:
+            await status_message.edit_text(f"Downloading video: {percent:.1f}%")
+        except MessageNotModified:
+            pass
+
+    await message.bot.download_media(file_id, file_name=file_path, progress=progress)
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
