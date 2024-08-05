@@ -155,30 +155,37 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         duration = total_frames / fps
         
         screenshots = []
-        for i in range(1, num_screenshots + 1):
-            time = i * duration / (num_screenshots + 1)
+        attempts = 0
+        max_attempts = num_screenshots * 2  # Allow up to twice as many attempts as requested screenshots
+
+        while len(screenshots) < num_screenshots and attempts < max_attempts:
+            time = (attempts + 1) * duration / (num_screenshots + 1)
             frame_number = int(time * fps)
             
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = cap.read()
             
             if ret:
-                screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+                screenshot_path = os.path.join(output_dir, f"screenshot_{len(screenshots)+1}.jpg")
                 cv2.imwrite(screenshot_path, frame)
                 screenshots.append(screenshot_path)
+                
+                percent = (len(screenshots) / num_screenshots) * 100
+                try:
+                    await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
+                except MessageNotModified:
+                    pass
             else:
                 logger.warning(f"Failed to capture frame {frame_number}")
             
-            percent = (i / num_screenshots) * 100
-            try:
-                await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
-            except MessageNotModified:
-                pass
+            attempts += 1
         
         cap.release()
         
         if not screenshots:
-            raise ValueError("No screenshots could be generated")
+            raise ValueError("No screenshots could be generated. The video might be corrupt or empty.")
+        elif len(screenshots) < num_screenshots:
+            logger.warning(f"Only {len(screenshots)} out of {num_screenshots} screenshots could be generated.")
         
         return screenshots
     except Exception as e:
