@@ -58,10 +58,13 @@ async def handle_video(client, message):
         # Download the video
         await download_video_with_progress(message, file_id, video_path, status_message)
 
+        # Generate a unique identifier for this video
+        video_id = f"v{message.id}"
+
         # Ask user for number of screenshots
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}_{file_name}"),
-             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}_{file_name}")]
+            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{video_id}"),
+             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{video_id}")]
         ])
         await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
 
@@ -84,12 +87,13 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
     try:
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
-        message_id = int(data[2])
-        file_name = data[3]
+        video_id = data[2]
         
         await callback_query.answer()
         status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
 
+        # Reconstruct the file name from the video_id
+        file_name = f"{video_id[1:]}.mp4"
         video_path = os.path.join(temp_dir, file_name)
 
         try:
@@ -105,12 +109,12 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             await status_message.edit_text("Uploading collage...")
 
             # Upload collage to graph.org
-            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
+            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, int(video_id[1:]))
 
             # Send result to user
             await callback_query.message.reply_text(
                 f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
-                reply_to_message_id=message_id
+                reply_to_message_id=int(video_id[1:])
             )
 
             await status_message.edit_text("Processing completed.")
