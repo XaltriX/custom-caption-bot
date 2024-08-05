@@ -90,7 +90,6 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
             # Check if the file exists and log its details
             if not os.path.exists(video_path):
-                logger.error(f"Video file not found after download. Path: {video_path}")
                 raise FileNotFoundError(f"Downloaded video file not found: {video_path}")
 
             logger.info(f"Video downloaded successfully. Path: {video_path}, Size: {os.path.getsize(video_path)} bytes")
@@ -98,6 +97,9 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             # Generate screenshots
             await status_message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
             screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
+
+            if len(screenshots) < num_screenshots:
+                logger.warning(f"Only {len(screenshots)} screenshots could be generated")
 
             await status_message.edit_text("Creating high-quality collage...")
 
@@ -112,19 +114,25 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
 
             # Send result to user
             await callback_query.message.reply_text(
-                f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
+                f"Here is your high-quality collage of {len(screenshots)} screenshots: {graph_url}",
                 reply_to_message_id=video_id
             )
 
             await status_message.edit_text("Processing completed.")
 
+        except FileNotFoundError as e:
+            logger.error(f"Video file not found: {e}")
+            await status_message.edit_text("Error: The video file could not be downloaded. Please try again.")
+        except ValueError as e:
+            logger.error(f"Error processing video: {e}")
+            await status_message.edit_text(f"Error: {str(e)}. Please try a different video.")
         except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
-            await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
+            logger.error(f"Unexpected error processing video: {e}", exc_info=True)
+            await status_message.edit_text("An unexpected error occurred. Please try again later.")
 
     except Exception as e:
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
-        await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
+        await callback_query.message.reply_text("An unexpected error occurred. Please try again later.")
 
 async def download_video_with_progress(client: Client, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
@@ -139,6 +147,9 @@ async def download_video_with_progress(client: Client, file_id: str, file_path: 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
         cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError("Unable to open video file")
+        
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         duration = total_frames / fps
@@ -155,6 +166,8 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
                 screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
                 cv2.imwrite(screenshot_path, frame)
                 screenshots.append(screenshot_path)
+            else:
+                logger.warning(f"Failed to capture frame {frame_number}")
             
             percent = (i / num_screenshots) * 100
             try:
@@ -163,6 +176,10 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
                 pass
         
         cap.release()
+        
+        if not screenshots:
+            raise ValueError("No screenshots could be generated")
+        
         return screenshots
     except Exception as e:
         logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
@@ -173,23 +190,23 @@ def create_collage(image_paths: List[str], collage_path: str):
         images = [Image.open(image) for image in image_paths]
         num_images = len(images)
         
-        if num_images not in [5, 10]:
-            raise ValueError("This function is designed for 5 or 10 images only.")
+        if num_images < 2:
+            raise ValueError("At least 2 images are required to create a collage")
 
         # Get the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
         aspect_ratio = images[0].width / images[0].height
 
         # Define layout
-        if num_images == 5:
+        if num_images <= 5:
             rows, cols = 3, 2
-            layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)]  # (col, row, span_cols, span_rows)
-        else:  # 10 images
+            layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)][:num_images]
+        else:
             rows, cols = 3, 4
             layout = [
                 (0, 0), (1, 0), (2, 0), (3, 0),
                 (0, 1), (1, 1), (2, 1), (3, 1),
                 (0, 2, 2, 1), (2, 2, 2, 1)
-            ]
+            ][:num_images]
 
         # Calculate cell size based on the aspect ratio
         max_dimension = 1600  # Increased for higher quality
