@@ -49,27 +49,39 @@ async def help_command(client, message):
 @app.on_message(filters.video)
 async def handle_video(client, message):
     file_id = message.video.file_id
-    video_id = f"v{message.id}"
+    video_id = message.id  # Changed from f"v{message.id}" to just message.id
+
+    # Create a shorter callback data
+    callback_data_5 = f"ss_5_{video_id}"
+    callback_data_10 = f"ss_10_{video_id}"
 
     # Ask user for number of screenshots before downloading
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{video_id}_{file_id}"),
-         InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{video_id}_{file_id}")]
+        [InlineKeyboardButton("5 screenshots", callback_data=callback_data_5),
+         InlineKeyboardButton("10 screenshots", callback_data=callback_data_10)]
     ])
-    await message.reply_text("How many screenshots do you want?", reply_markup=keyboard)
+    
+    try:
+        await message.reply_text("How many screenshots do you want?", reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"Error sending message with inline keyboard: {e}")
+        await message.reply_text("An error occurred while processing your request. Please try again later.")
 
 @app.on_callback_query()
 async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery):
     try:
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
-        video_id = data[2]
-        file_id = data[3]
+        video_id = int(data[2])
+        
+        # Retrieve the file_id from the original message
+        original_message = await client.get_messages(callback_query.message.chat.id, video_id)
+        file_id = original_message.video.file_id
         
         await callback_query.answer()
         status_message = await callback_query.message.reply_text("Processing started. Downloading video: 0%")
 
-        file_name = f"{video_id[1:]}.mp4"
+        file_name = f"{video_id}.mp4"
         video_path = os.path.join(temp_dir, file_name)
 
         try:
@@ -96,12 +108,12 @@ async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery
             await status_message.edit_text("Uploading collage...")
 
             # Upload collage to graph.org
-            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, int(video_id[1:]))
+            graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, video_id)
 
             # Send result to user
             await callback_query.message.reply_text(
                 f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
-                reply_to_message_id=int(video_id[1:])
+                reply_to_message_id=video_id
             )
 
             await status_message.edit_text("Processing completed.")
