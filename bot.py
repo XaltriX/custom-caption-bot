@@ -5,12 +5,11 @@ from typing import List
 import tempfile
 import requests
 from PIL import Image
-import cv2
-import subprocess
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
+from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
@@ -27,8 +26,8 @@ BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
 # Initialize the Pyrogram client
 app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Create a persistent temporary directory
-temp_dir = tempfile.mkdtemp()
+# Queue to manage multiple video processing tasks
+video_queue = asyncio.Queue()
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
@@ -49,206 +48,200 @@ async def help_command(client, message):
 
 @app.on_message(filters.video)
 async def handle_video(client, message):
-    file_id = message.video.file_id
-    video_id = message.id
+    await message.reply_text("Video received. Processing will begin shortly...")
+    await video_queue.put(message)
 
-    callback_data_5 = f"ss_5_{video_id}"
-    callback_data_10 = f"ss_10_{video_id}"
+    if video_queue.qsize() == 1:
+        asyncio.create_task(process_video_queue())
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("5 screenshots", callback_data=callback_data_5),
-         InlineKeyboardButton("10 screenshots", callback_data=callback_data_10)]
-    ])
-    
-    try:
-        await message.reply_text("How many screenshots do you want?", reply_markup=keyboard)
-    except Exception as e:
-        logger.error(f"Error sending message with inline keyboard: {e}")
-        await message.reply_text("An error occurred while processing your request. Please try again later.")
+async def process_video_queue():
+    while not video_queue.empty():
+        message = await video_queue.get()
+        try:
+            await process_video(message)
+        except Exception as e:
+            logger.error(f"Error processing video: {e}", exc_info=True)
+            await message.reply_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
+        finally:
+            video_queue.task_done()
+
+async def process_video(message: Message):
+    video = message.video
+    file_id = video.file_id
+    file_name = f"{file_id}.mp4"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        video_path = os.path.join(temp_dir, file_name)
+
+        # Download the video with progress
+        status_message = await message.reply_text("Downloading video: 0%")
+        try:
+            await download_video_with_progress(message, file_id, video_path, status_message)
+        except Exception as e:
+            logger.error(f"Error downloading video: {e}", exc_info=True)
+            await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
+            return
+
+        # Ask user for number of screenshots
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("5 screenshots", callback_data=f"ss_5_{message.id}"),
+             InlineKeyboardButton("10 screenshots", callback_data=f"ss_10_{message.id}")]
+        ])
+        await status_message.edit_text("How many screenshots do you want?", reply_markup=keyboard)
+
+async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
+    async def progress(current, total):
+        percent = (current / total) * 100
+        try:
+            await status_message.edit_text(f"Downloading video: {percent:.1f}%")
+        except MessageNotModified:
+            pass
+
+    await message.download(file_name=file_path, progress=progress)
 
 @app.on_callback_query()
 async def handle_screenshot_choice(client: Client, callback_query: CallbackQuery):
     try:
         data = callback_query.data.split('_')
         num_screenshots = int(data[1])
-        video_id = int(data[2])
+        message_id = int(data[2])
         
-        original_message = await client.get_messages(callback_query.message.chat.id, video_id)
-        file_id = original_message.video.file_id
+        # Retrieve the original message
+        message = await app.get_messages(callback_query.message.chat.id, message_id)
         
+        file_id = message.video.file_id
+        file_name = f"{file_id}.mp4"
+
         await callback_query.answer()
-        status_message = await callback_query.message.reply_text("Processing started. Downloading video: 0%")
+        status_message = await callback_query.message.edit_text(f"Generating {num_screenshots} screenshots: 0%")
 
-        file_name = f"{video_id}.mp4"
-        video_path = os.path.join(temp_dir, file_name)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_path = os.path.join(temp_dir, file_name)
 
-        try:
-            await download_video_with_progress(client, file_id, video_path, status_message)
-
+            # Download the video if it's not already downloaded
             if not os.path.exists(video_path):
-                raise FileNotFoundError(f"Downloaded video file not found: {video_path}")
+                try:
+                    await download_video_with_progress(message, file_id, video_path, status_message)
+                except Exception as e:
+                    logger.error(f"Error downloading video: {e}", exc_info=True)
+                    await status_message.edit_text(f"Failed to download the video: {str(e)}. Please try again.")
+                    return
 
-            logger.info(f"Video downloaded successfully. Path: {video_path}, Size: {os.path.getsize(video_path)} bytes")
+            try:
+                # Generate screenshots with progress
+                screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
 
-            if not is_valid_video(video_path):
-                raise ValueError("The video file appears to be corrupt or incomplete. Please try uploading it again.")
+                await status_message.edit_text("Creating high-quality collage...")
 
-            await status_message.edit_text(f"Generating screenshots: 0%")
-            screenshots = await generate_screenshots_with_progress(video_path, num_screenshots, temp_dir, status_message)
+                # Create collage
+                collage_path = os.path.join(temp_dir, "collage.jpg")
+                create_collage(screenshots, collage_path)
 
-            if len(screenshots) == 0:
-                raise ValueError("No screenshots could be generated. The video might be corrupt or empty.")
+                await status_message.edit_text("Uploading collage...")
 
-            await status_message.edit_text("Creating high-quality image...")
+                # Upload collage to graph.org
+                graph_url = await asyncio.to_thread(upload_to_graph, collage_path, callback_query.from_user.id, message_id)
 
-            result_path = os.path.join(temp_dir, f"result_{file_name}.jpg")
-            create_result_image(screenshots, result_path)
+                # Send result to user
+                await callback_query.message.reply_text(
+                    f"Here is your high-quality collage of {num_screenshots} screenshots: {graph_url}",
+                    reply_to_message_id=message_id
+                )
 
-            await status_message.edit_text("Uploading image...")
+                await status_message.edit_text("Processing completed.")
 
-            graph_url = await asyncio.to_thread(upload_to_graph, result_path, callback_query.from_user.id, video_id)
+            except Exception as e:
+                logger.error(f"Error processing video: {e}", exc_info=True)
+                await status_message.edit_text(f"An error occurred while processing: {str(e)}. Please try again.")
 
-            await callback_query.message.reply_text(
-                f"Here is your high-quality image with {len(screenshots)} screenshot(s): {graph_url}",
-                reply_to_message_id=video_id
-            )
-
-            await status_message.edit_text("Processing completed.")
-
-        except FileNotFoundError as e:
-            logger.error(f"Video file not found: {e}")
-            await status_message.edit_text("Error: The video file could not be downloaded. Please try again.")
-        except ValueError as e:
-            logger.error(f"Error processing video: {e}")
-            await status_message.edit_text(f"Error: {str(e)}. Please try a different video.")
-        except Exception as e:
-            logger.error(f"Unexpected error processing video: {e}", exc_info=True)
-            await status_message.edit_text("An unexpected error occurred. Please try again later.")
-
+            finally:
+                # Clean up: delete the video file
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                    logger.info(f"Deleted video file: {video_path}")
     except Exception as e:
         logger.error(f"Error in handle_screenshot_choice: {e}", exc_info=True)
-        await callback_query.message.reply_text("An unexpected error occurred. Please try again later.")
-
-async def download_video_with_progress(client: Client, file_id: str, file_path: str, status_message: Message):
-    async def progress(current, total):
-        if total > 0:
-            percent = (current / total) * 100
-            try:
-                await status_message.edit_text(f"Downloading video: {percent:.1f}%")
-            except MessageNotModified:
-                pass
-        else:
-            await status_message.edit_text("Downloading video: Size unknown")
-
-    await client.download_media(file_id, file_name=file_path, progress=progress)
-
-def is_valid_video(video_path: str) -> bool:
-    try:
-        result = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', 
-                                 '-count_packets', '-show_entries', 'stream=nb_read_packets', 
-                                 '-of', 'csv=p=0', video_path], 
-                                capture_output=True, text=True)
-        return int(result.stdout.strip()) > 0
-    except subprocess.CalledProcessError:
-        return False
-    except Exception as e:
-        logger.error(f"Error validating video: {e}")
-        return False
+        await callback_query.message.reply_text(f"An unexpected error occurred: {str(e)}. Please try again later.")
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise ValueError("Unable to open video file")
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        duration = total_frames / fps
+        clip = VideoFileClip(video_path)
+        duration = clip.duration
+        interval = duration / (num_screenshots + 1)
         
         screenshots = []
-        attempts = 0
-        max_attempts = num_screenshots * 5
-
-        while len(screenshots) < num_screenshots and attempts < max_attempts:
-            time = (attempts + 1) * duration / (max_attempts + 1)
-            frame_number = int(time * fps)
+        for i in range(1, num_screenshots + 1):
+            time = i * interval
+            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+            clip.save_frame(screenshot_path, t=time)
+            screenshots.append(screenshot_path)
             
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = cap.read()
-            
-            if ret:
-                screenshot_path = os.path.join(output_dir, f"screenshot_{len(screenshots)+1}.jpg")
-                cv2.imwrite(screenshot_path, frame)
-                screenshots.append(screenshot_path)
-                
-                percent = (len(screenshots) / num_screenshots) * 100
-                try:
-                    await status_message.edit_text(f"Generating screenshots: {percent:.1f}%")
-                except MessageNotModified:
-                    pass
-            else:
-                logger.warning(f"Failed to capture frame {frame_number}")
-            
-            attempts += 1
+            percent = (i / num_screenshots) * 100
+            try:
+                await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
+            except MessageNotModified:
+                pass
         
-        cap.release()
-        
-        if len(screenshots) < num_screenshots:
-            logger.warning(f"Only {len(screenshots)} out of {num_screenshots} screenshots could be generated.")
-        
+        clip.close()
         return screenshots
     except Exception as e:
         logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
         raise
 
-def create_result_image(image_paths: List[str], result_path: str):
+def create_collage(image_paths: List[str], collage_path: str):
     try:
         images = [Image.open(image) for image in image_paths]
         num_images = len(images)
         
-        if num_images == 1:
-            # If only one screenshot, just save it as is
-            images[0].save(result_path, quality=95)
-        else:
-            # Create a collage
-            aspect_ratio = images[0].width / images[0].height
+        if num_images not in [5, 10]:
+            raise ValueError("This function is designed for 5 or 10 images only.")
 
-            if num_images <= 5:
-                rows, cols = 3, 2
-                layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)][:num_images]
-            else:
-                rows, cols = 3, 4
-                layout = [
-                    (0, 0), (1, 0), (2, 0), (3, 0),
-                    (0, 1), (1, 1), (2, 1), (3, 1),
-                    (0, 2, 2, 1), (2, 2, 2, 1)
-                ][:num_images]
+        # Get the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
+        aspect_ratio = images[0].width / images[0].height
 
-            max_dimension = 1600
-            if aspect_ratio >= 1:
-                cell_width = max_dimension // cols
-                cell_height = int(cell_width / aspect_ratio)
-            else:
-                cell_height = max_dimension // rows
-                cell_width = int(cell_height * aspect_ratio)
+        # Define layout
+        if num_images == 5:
+            rows, cols = 3, 2
+            layout = [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2, 2, 1)]  # (col, row, span_cols, span_rows)
+        else:  # 10 images
+            rows, cols = 3, 4
+            layout = [
+                (0, 0), (1, 0), (2, 0), (3, 0),
+                (0, 1), (1, 1), (2, 1), (3, 1),
+                (0, 2, 2, 1), (2, 2, 2, 1)
+            ]
 
-            collage_width = cell_width * cols
-            collage_height = cell_height * rows
-            collage = Image.new('RGB', (collage_width, collage_height))
+        # Calculate cell size based on the aspect ratio
+        max_dimension = 1600  # Increased for higher quality
+        if aspect_ratio >= 1:  # Landscape or square
+            cell_width = max_dimension // cols
+            cell_height = int(cell_width / aspect_ratio)
+        else:  # Portrait
+            cell_height = max_dimension // rows
+            cell_width = int(cell_height * aspect_ratio)
 
-            for img, pos in zip(images, layout):
-                img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
-                img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
-                img_resized = img.resize((img_width, img_height), Image.LANCZOS)
-                
-                x = pos[0] * cell_width
-                y = pos[1] * cell_height
-                
-                collage.paste(img_resized, (x, y))
+        # Create the collage image
+        collage_width = cell_width * cols
+        collage_height = cell_height * rows
+        collage = Image.new('RGB', (collage_width, collage_height))
 
-            collage.save(result_path, quality=95)
+        # Place images in the collage
+        for img, pos in zip(images, layout):
+            # Resize image to fit the cell
+            img_width = cell_width * (pos[2] if len(pos) > 2 else 1)
+            img_height = cell_height * (pos[3] if len(pos) > 3 else 1)
+            img_resized = img.resize((img_width, img_height), Image.LANCZOS)
+            
+            # Calculate position
+            x = pos[0] * cell_width
+            y = pos[1] * cell_height
+            
+            # Paste the image
+            collage.paste(img_resized, (x, y))
+
+        collage.save(collage_path, quality=95)  # Increased quality
     except Exception as e:
-        logger.error(f"Error in create_result_image: {e}", exc_info=True)
+        logger.error(f"Error in create_collage: {e}", exc_info=True)
         raise
 
 def upload_to_graph(image_path, user_id, message_id):
@@ -277,8 +270,4 @@ async def main():
     await idle()
 
 if __name__ == "__main__":
-    try:
-        app.run(main())
-    finally:
-        import shutil
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    app.run(main())
