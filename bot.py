@@ -5,16 +5,22 @@ from typing import List
 import tempfile
 import requests
 from PIL import Image
+import time
+import sys
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
-from pyrogram.errors import MessageNotModified
+from pyrogram.errors import MessageNotModified, FloodWait
 from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("bot.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -28,6 +34,9 @@ app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_T
 
 # Queue to manage multiple video processing tasks
 video_queue = asyncio.Queue()
+
+# Global variable to track the bot's running state
+bot_running = True
 
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
@@ -54,7 +63,7 @@ async def handle_video(client, message):
         asyncio.create_task(process_video_queue())
 
 async def process_video_queue():
-    while not video_queue.empty():
+    while bot_running and not video_queue.empty():
         message = await video_queue.get()
         try:
             await process_video(message)
@@ -121,8 +130,11 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         percent = (current / total) * 100
         try:
             await status_message.edit_text(f"Downloading video: {percent:.1f}%")
+            print(f"Downloading video: {percent:.1f}%")
         except MessageNotModified:
             pass
+        except FloodWait as e:
+            await asyncio.sleep(e.x)
 
     await message.download(file_name=file_path, progress=progress)
 
@@ -142,8 +154,11 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
             percent = (i / num_screenshots) * 100
             try:
                 await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
+                print(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
             except MessageNotModified:
                 pass
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
         
         clip.close()
         return screenshots
@@ -196,6 +211,7 @@ def create_collage(image_paths: List[str], collage_path: str):
             collage.paste(img_resized, (x, y))
 
         collage.save(collage_path, quality=95)  # Increased quality
+        print(f"Collage created: {collage_path}")
     except Exception as e:
         logger.error(f"Error in create_collage: {e}", exc_info=True)
         raise
@@ -221,9 +237,20 @@ async def handle_text(client, message):
     await message.reply_text("I can only process videos. Please send me a video file or use /help for more information.")
 
 async def main():
-    await app.start()
-    logger.info("Bot started. Listening for messages...")
-    await idle()
+    global bot_running
+    while True:
+        try:
+            bot_running = True
+            await app.start()
+            logger.info("Bot started. Listening for messages...")
+            await idle()
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}", exc_info=True)
+            logger.info("Restarting bot in 10 seconds...")
+            await asyncio.sleep(10)
+        finally:
+            bot_running = False
+            await app.stop()
 
 if __name__ == "__main__":
     app.run(main())
