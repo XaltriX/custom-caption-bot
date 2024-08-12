@@ -7,6 +7,7 @@ import requests
 from PIL import Image
 import time
 import sys
+import traceback
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
@@ -15,7 +16,7 @@ from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("bot.log"),
@@ -63,15 +64,17 @@ async def handle_video(client, message):
         asyncio.create_task(process_video_queue())
 
 async def process_video_queue():
-    while bot_running and not video_queue.empty():
-        message = await video_queue.get()
+    global bot_running
+    while bot_running:
         try:
-            await process_video(message)
+            if not video_queue.empty():
+                message = await video_queue.get()
+                await process_video(message)
+            else:
+                await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
-            await message.reply_text(f"An error occurred while processing your video: {str(e)}. Please try again later.")
-        finally:
-            video_queue.task_done()
+            logger.error(f"Error in process_video_queue: {e}", exc_info=True)
+            await asyncio.sleep(5)  # Wait before trying again
 
 async def process_video(message: Message):
     video = message.video
@@ -130,13 +133,20 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         percent = (current / total) * 100
         try:
             await status_message.edit_text(f"Downloading video: {percent:.1f}%")
-            print(f"Downloading video: {percent:.1f}%")
+            logger.info(f"Downloading video: {percent:.1f}%")
         except MessageNotModified:
             pass
         except FloodWait as e:
+            logger.warning(f"FloodWait: Sleeping for {e.x} seconds")
             await asyncio.sleep(e.x)
+        except Exception as e:
+            logger.error(f"Error updating download progress: {e}", exc_info=True)
 
-    await message.download(file_name=file_path, progress=progress)
+    try:
+        await message.download(file_name=file_path, progress=progress)
+    except Exception as e:
+        logger.error(f"Error downloading video: {e}", exc_info=True)
+        raise
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
@@ -154,11 +164,14 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
             percent = (i / num_screenshots) * 100
             try:
                 await status_message.edit_text(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
-                print(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
+                logger.info(f"Generating {num_screenshots} screenshots: {percent:.1f}%")
             except MessageNotModified:
                 pass
             except FloodWait as e:
+                logger.warning(f"FloodWait: Sleeping for {e.x} seconds")
                 await asyncio.sleep(e.x)
+            except Exception as e:
+                logger.error(f"Error updating screenshot progress: {e}", exc_info=True)
         
         clip.close()
         return screenshots
@@ -211,7 +224,7 @@ def create_collage(image_paths: List[str], collage_path: str):
             collage.paste(img_resized, (x, y))
 
         collage.save(collage_path, quality=95)  # Increased quality
-        print(f"Collage created: {collage_path}")
+        logger.info(f"Collage created: {collage_path}")
     except Exception as e:
         logger.error(f"Error in create_collage: {e}", exc_info=True)
         raise
@@ -219,18 +232,22 @@ def create_collage(image_paths: List[str], collage_path: str):
 def upload_to_graph(image_path, user_id, message_id):
     url = "https://graph.org/upload"
     
-    with open(image_path, "rb") as file:
-        files = {"file": file}
-        response = requests.post(url, files=files)
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data[0].get("src"):
-            return f"https://graph.org{data[0]['src']}"
+    try:
+        with open(image_path, "rb") as file:
+            files = {"file": file}
+            response = requests.post(url, files=files)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data[0].get("src"):
+                return f"https://graph.org{data[0]['src']}"
+            else:
+                raise Exception("Unable to retrieve image link from response")
         else:
-            raise Exception("Unable to retrieve image link from response")
-    else:
-        raise Exception(f"Upload failed with status code {response.status_code}")
+            raise Exception(f"Upload failed with status code {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error in upload_to_graph: {e}", exc_info=True)
+        raise
 
 @app.on_message(filters.text & ~filters.command(["start", "help"]))
 async def handle_text(client, message):
@@ -245,7 +262,7 @@ async def main():
             logger.info("Bot started. Listening for messages...")
             await idle()
         except Exception as e:
-            logger.error(f"Error in main loop: {e}", exc_info=True)
+            logger.error(f"Critical error in main loop: {e}", exc_info=True)
             logger.info("Restarting bot in 10 seconds...")
             await asyncio.sleep(10)
         finally:
