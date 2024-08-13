@@ -75,7 +75,7 @@ async def process_video(message: Message):
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, file_name)
 
-        status_message = await message.reply_text("Downloading video: 0%")
+        status_message = await message.reply_text("Downloading video:\n▰▰▰▰▰▰▰▰▰▰ 0%")
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
         except Exception as e:
@@ -86,6 +86,10 @@ async def process_video(message: Message):
         try:
             await status_message.edit_text("Generating screenshots...")
             screenshots = await generate_screenshots(video_path, 10, temp_dir)
+
+            if not screenshots:
+                await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
+                return
 
             await status_message.edit_text("Creating collage...")
             collage_path = os.path.join(temp_dir, "collage.jpg")
@@ -103,35 +107,43 @@ async def process_video(message: Message):
 
         except Exception as e:
             logger.error(f"Error processing video: {e}")
-            await status_message.edit_text(f"An error occurred while processing. Please try again.")
+            await status_message.edit_text(f"An error occurred while processing. The video might be corrupted or in an unsupported format.")
 
 async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
-        percent = (current / total) * 100
-        if percent % 10 == 0:  # Update only every 10%
-            try:
-                await status_message.edit_text(f"Downloading video: {percent:.0f}%")
-            except MessageNotModified:
-                pass
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
+        percent = int((current / total) * 100)
+        bar_length = 10
+        filled_length = int(bar_length * current // total)
+        bar = '▰' * filled_length + '═' * (bar_length - filled_length)
+        progress_text = f"{bar} {percent}%"
+        
+        try:
+            await status_message.edit_text(f"Downloading video:\n{progress_text}")
+        except MessageNotModified:
+            pass
+        except FloodWait as e:
+            await asyncio.sleep(e.x)
 
     await message.download(file_name=file_path, progress=progress)
 
 async def generate_screenshots(video_path: str, num_screenshots: int, output_dir: str) -> List[str]:
-    clip = VideoFileClip(video_path)
-    duration = clip.duration
-    interval = duration / (num_screenshots + 1)
-    
-    screenshots = []
-    for i in range(1, num_screenshots + 1):
-        time = i * interval
-        screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-        clip.save_frame(screenshot_path, t=time)
-        screenshots.append(screenshot_path)
-    
-    clip.close()
-    return screenshots
+    try:
+        clip = VideoFileClip(video_path)
+        duration = clip.duration
+        interval = duration / (num_screenshots + 1)
+        
+        screenshots = []
+        for i in range(1, num_screenshots + 1):
+            time = i * interval
+            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+            clip.save_frame(screenshot_path, t=time)
+            screenshots.append(screenshot_path)
+        
+        clip.close()
+        return screenshots
+    except Exception as e:
+        logger.error(f"Error generating screenshots: {e}")
+        return []
 
 def create_collage(image_paths: List[str], collage_path: str):
     images = [Image.open(image) for image in image_paths]
