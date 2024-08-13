@@ -84,6 +84,7 @@ async def process_video(message: Message):
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
             await status_message.edit_text(f"Failed to download the video. Please try again.")
+            await notify_user(message, "There was an error downloading your video. Please try uploading it again.")
             return
 
         try:
@@ -92,6 +93,7 @@ async def process_video(message: Message):
 
             if not screenshots:
                 await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
+                await notify_user(message, "There was an error generating screenshots from your video. The video might be corrupted or in an unsupported format.")
                 return
 
             await status_message.edit_text("Creating collage...")
@@ -112,6 +114,7 @@ async def process_video(message: Message):
         except Exception as e:
             logger.error(f"Error processing video: {e}")
             await status_message.edit_text(f"An error occurred while processing. The video might be corrupted or in an unsupported format.")
+            await notify_user(message, "There was an error processing your video. It might be corrupted or in an unsupported format.")
 
 async def download_video_with_progress(message: Message, file_id: str, file_path: str, status_message: Message):
     async def progress(current, total):
@@ -126,7 +129,7 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         except MessageNotModified:
             pass
         except FloodWait as e:
-            await asyncio.sleep(e.x)
+            await asyncio.sleep(e.value)  # Use e.value instead of e.x
 
     await message.download(file_name=file_path, progress=progress)
     logger.info(f"Video download completed for user {message.from_user.id}")
@@ -155,7 +158,7 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
             except MessageNotModified:
                 pass
             except FloodWait as e:
-                await asyncio.sleep(e.x)
+                await asyncio.sleep(e.value)  # Use e.value instead of e.x
             
             logger.info(f"Generated screenshot {i}/{num_screenshots}")
         
@@ -200,6 +203,12 @@ def upload_to_graph(image_path):
     
     logger.error("Failed to upload collage")
     raise Exception("Upload failed")
+
+async def notify_user(message: Message, notification_text: str):
+    try:
+        await message.reply_text(notification_text)
+    except Exception as e:
+        logger.error(f"Failed to notify user: {e}")
 
 @app.on_message(filters.text & ~filters.command(["start", "help"]))
 async def handle_text(client, message):
