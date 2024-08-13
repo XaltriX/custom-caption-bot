@@ -37,6 +37,7 @@ video_queue = asyncio.Queue()
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
     await message.reply_text("Welcome! I'm the Screenshot Bot. Send me a video, and I'll generate 10 screenshots for you.")
+    logger.info(f"Start command received from user {message.from_user.id}")
 
 @app.on_message(filters.command("help"))
 async def help_command(client, message):
@@ -49,11 +50,13 @@ async def help_command(client, message):
         "/help - Show this help message"
     )
     await message.reply_text(help_text)
+    logger.info(f"Help command received from user {message.from_user.id}")
 
 @app.on_message(filters.video)
 async def handle_video(client, message):
     await message.reply_text("Video received. Processing will begin shortly.")
     await video_queue.put(message)
+    logger.info(f"Video received from user {message.from_user.id}")
 
 async def process_video_queue():
     while True:
@@ -84,8 +87,8 @@ async def process_video(message: Message):
             return
 
         try:
-            await status_message.edit_text("Generating screenshots...")
-            screenshots = await generate_screenshots(video_path, 10, temp_dir)
+            await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
+            screenshots = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
 
             if not screenshots:
                 await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
@@ -104,6 +107,7 @@ async def process_video(message: Message):
             )
 
             await status_message.edit_text("Processing completed.")
+            logger.info(f"Video processing completed for user {message.from_user.id}")
 
         except Exception as e:
             logger.error(f"Error processing video: {e}")
@@ -125,8 +129,9 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
             await asyncio.sleep(e.x)
 
     await message.download(file_name=file_path, progress=progress)
+    logger.info(f"Video download completed for user {message.from_user.id}")
 
-async def generate_screenshots(video_path: str, num_screenshots: int, output_dir: str) -> List[str]:
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
         clip = VideoFileClip(video_path)
         duration = clip.duration
@@ -138,6 +143,21 @@ async def generate_screenshots(video_path: str, num_screenshots: int, output_dir
             screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
             clip.save_frame(screenshot_path, t=time)
             screenshots.append(screenshot_path)
+            
+            percent = int((i / num_screenshots) * 100)
+            bar_length = 10
+            filled_length = int(bar_length * i // num_screenshots)
+            bar = '▰' * filled_length + '═' * (bar_length - filled_length)
+            progress_text = f"{bar} {percent}%"
+            
+            try:
+                await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
+            except MessageNotModified:
+                pass
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
+            
+            logger.info(f"Generated screenshot {i}/{num_screenshots}")
         
         clip.close()
         return screenshots
@@ -163,6 +183,7 @@ def create_collage(image_paths: List[str], collage_path: str):
         collage.paste(img_resized, (x, y))
     
     collage.save(collage_path, quality=95)
+    logger.info("Collage created successfully")
 
 def upload_to_graph(image_path):
     url = "https://graph.org/upload"
@@ -174,13 +195,16 @@ def upload_to_graph(image_path):
     if response.status_code == 200:
         data = response.json()
         if data[0].get("src"):
+            logger.info("Collage uploaded successfully")
             return f"https://graph.org{data[0]['src']}"
     
+    logger.error("Failed to upload collage")
     raise Exception("Upload failed")
 
 @app.on_message(filters.text & ~filters.command(["start", "help"]))
 async def handle_text(client, message):
     await message.reply_text("I can only process videos. Please send me a video file or use /help for more information.")
+    logger.info(f"Received text message from user {message.from_user.id}")
 
 async def main():
     await app.start()
