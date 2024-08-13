@@ -5,10 +5,9 @@ from typing import List
 import tempfile
 import requests
 from PIL import Image
-import time
 import sys
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pyrogram.errors import MessageNotModified, FloodWait
 from moviepy.editor import VideoFileClip
@@ -137,7 +136,6 @@ async def generate_screenshots(video_path: str, num_screenshots: int, output_dir
 def create_collage(image_paths: List[str], collage_path: str):
     images = [Image.open(image) for image in image_paths]
     
-    # Define layout for 10 images (3x4 grid with last row merged)
     rows, cols = 3, 4
     cell_width = 400
     cell_height = 300
@@ -174,6 +172,7 @@ async def handle_text(client, message):
 
 async def main():
     await app.start()
+    logger.info("Bot started. Listening for messages...")
     asyncio.create_task(process_video_queue())
     await idle()
 
