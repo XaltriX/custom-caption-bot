@@ -15,7 +15,7 @@ from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Changed to DEBUG for more detailed logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("bot.log"),
@@ -68,7 +68,7 @@ async def process_video_queue():
             else:
                 await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Error in process_video_queue: {e}")
+            logger.error(f"Error in process_video_queue: {e}", exc_info=True)
             await asyncio.sleep(5)
 
 async def process_video(message: Message):
@@ -83,7 +83,7 @@ async def process_video(message: Message):
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
         except Exception as e:
-            logger.error(f"Error downloading video: {e}")
+            logger.error(f"Error downloading video: {e}", exc_info=True)
             await status_message.edit_text(f"Failed to download the video. Please try again.")
             await notify_user(message, "There was an error downloading your video. Please try uploading it again.")
             return
@@ -113,7 +113,7 @@ async def process_video(message: Message):
             logger.info(f"Video processing completed for user {message.from_user.id}")
 
         except Exception as e:
-            logger.error(f"Error processing video: {e}")
+            logger.error(f"Error processing video: {e}", exc_info=True)
             await status_message.edit_text(f"An error occurred while processing. The video might be corrupted or in an unsupported format.")
             await notify_user(message, "There was an error processing your video. It might be corrupted or in an unsupported format.")
 
@@ -137,14 +137,17 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
 
 async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> tuple[List[str], float]:
     try:
+        logger.debug(f"Opening video file: {video_path}")
         clip = VideoFileClip(video_path)
         duration = clip.duration
+        logger.debug(f"Video duration: {duration}")
         interval = duration / (num_screenshots + 1)
         
         screenshots = []
         for i in range(1, num_screenshots + 1):
             time = i * interval
             screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+            logger.debug(f"Saving frame at {time}s to {screenshot_path}")
             clip.save_frame(screenshot_path, t=time)
             screenshots.append(screenshot_path)
             
@@ -166,94 +169,117 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         clip.close()
         return screenshots, duration
     except Exception as e:
-        logger.error(f"Error generating screenshots: {e}")
+        logger.error(f"Error generating screenshots: {e}", exc_info=True)
         return [], 0
 
 def create_collage(image_paths: List[str], collage_path: str, video_width: int, video_height: int, video_duration: float):
-    images = [Image.open(image) for image in image_paths]
-    
-    # Determine orientation
-    is_portrait = video_height > video_width
-    
-    # Set collage dimensions and layout
-    if is_portrait:
-        cols, rows = 2, 5
-        collage_width = 1080
-        collage_height = int(collage_width * (video_height / video_width))
-    else:
-        cols, rows = 3, 4
-        collage_height = 1080
-        collage_width = int(collage_height * (video_width / video_height))
-    
-    cell_width = collage_width // cols
-    cell_height = collage_height // rows
-    
-    collage = Image.new('RGB', (collage_width, collage_height), color='white')
-    draw = ImageDraw.Draw(collage)
-    
-    # Load a font (you may need to adjust the path or use a different font)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-    except IOError:
-        font = ImageFont.load_default()
-    
-    for i, img in enumerate(images):
-        # Resize and crop the image to fit the cell while maintaining aspect ratio
-        img_ratio = img.width / img.height
-        cell_ratio = cell_width / cell_height
+        images = [Image.open(image) for image in image_paths]
         
-        if img_ratio > cell_ratio:
-            new_height = cell_height
-            new_width = int(new_height * img_ratio)
+        # Determine orientation
+        is_portrait = video_height > video_width
+        
+        # Set collage dimensions and layout
+        if is_portrait:
+            cols, rows = 2, 5
+            collage_width = 1080
+            collage_height = int(collage_width * (video_height / video_width))
         else:
-            new_width = cell_width
-            new_height = int(new_width / img_ratio)
+            cols, rows = 3, 4
+            collage_height = 1080
+            collage_width = int(collage_height * (video_width / video_height))
         
-        img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-        img_cropped = img_resized.crop((
-            (img_resized.width - cell_width) // 2,
-            (img_resized.height - cell_height) // 2,
-            (img_resized.width + cell_width) // 2,
-            (img_resized.height + cell_height) // 2
-        ))
+        cell_width = collage_width // cols
+        cell_height = collage_height // rows
         
-        # Calculate position
-        col = i % cols
-        row = i // cols
-        x = col * cell_width
-        y = row * cell_height
+        collage = Image.new('RGB', (collage_width, collage_height), color='white')
+        draw = ImageDraw.Draw(collage)
         
-        collage.paste(img_cropped, (x, y))
+        # Load a font (you may need to adjust the path or use a different font)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        except IOError:
+            font = ImageFont.load_default()
         
-        # Add timestamp below each screenshot
-        timestamp = ceil((i + 1) * (video_duration / (cols * rows + 1)))
-        text_position = (x + 5, y + cell_height - 25)
-        draw.text(text_position, f"{timestamp}s", font=font, fill=(255, 255, 255))
-    
-    collage.save(collage_path)
-    logger.info(f"Collage created at {collage_path}")
-
-def upload_to_graph(image_path: str) -> str:
-    url = "https://telegra.ph/upload"
-    with open(image_path, "rb") as file:
-        response = requests.post(url, files={"file": file})
-    response.raise_for_status()  # Ensure we raise an error for bad responses
-    response_data = response.json()
-    if isinstance(response_data, list) and "src" in response_data[0]:
-        graph_url = f"https://telegra.ph{response_data[0]['src']}"
-        logger.info(f"Image uploaded to Graph.org: {graph_url}")
-        return graph_url
-    else:
-        raise Exception(f"Unexpected response format: {response_data}")
-
-async def notify_user(message: Message, text: str):
-    try:
-        await message.reply_text(text)
-        logger.info(f"User {message.from_user.id} notified: {text}")
+        for i, img in enumerate(images):
+            # Resize and crop the image to fit the cell while maintaining aspect ratio
+            img_ratio = img.width / img.height
+            cell_ratio = cell_width / cell_height
+            
+            if img_ratio > cell_ratio:
+                new_height = cell_height
+                new_width = int(new_height * img_ratio)
+            else:
+                new_width = cell_width
+                new_height = int(new_width / img_ratio)
+            
+            img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+            img_cropped = img_resized.crop((
+                (img_resized.width - cell_width) // 2,
+                (img_resized.height - cell_height) // 2,
+                (img_resized.width + cell_width) // 2,
+                (img_resized.height + cell_height) // 2
+            ))
+            
+            # Calculate position
+            x = (i % cols) * cell_width
+            y = (i // cols) * cell_height
+            
+            # Paste image
+            collage.paste(img_cropped, (x, y))
+            
+            # Draw border
+            draw.rectangle([x, y, x + cell_width - 1, y + cell_height - 1], outline='white', width=2)
+            
+            # Add timestamp
+            timestamp = f"{ceil((i + 1) * video_duration / (len(images) + 1))}s"
+            text_width, text_height = draw.textsize(timestamp, font=font)
+            draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill='rgba(0, 0, 0, 128)')
+            draw.text((x + 5, y + 5), timestamp, font=font, fill='white')
+        
+        # Add title
+        title = "Video Screenshots"
+        title_width, title_height = draw.textsize(title, font=font)
+        draw.rectangle([0, 0, collage_width, title_height + 20], fill='rgba(0, 0, 0, 128)')
+        draw.text(((collage_width - title_width) // 2, 10), title, font=font, fill='white')
+        
+        collage.save(collage_path, quality=95)
+        logger.info("Collage created successfully")
     except Exception as e:
-        logger.error(f"Failed to notify user {message.from_user.id}: {e}")
+        logger.error(f"Error creating collage: {e}", exc_info=True)
+
+def upload_to_graph(image_path):
+    url = "https://graph.org/upload"
+    
+    with open(image_path, "rb") as file:
+        files = {"file": file}
+        response = requests.post(url, files=files)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data[0].get("src"):
+            logger.info("Collage uploaded successfully")
+            return f"https://graph.org{data[0]['src']}"
+    
+    logger.error("Failed to upload collage")
+    raise Exception("Upload failed")
+
+async def notify_user(message: Message, notification_text: str):
+    try:
+        await message.reply_text(notification_text)
+    except Exception as e:
+        logger.error(f"Failed to notify user: {e}", exc_info=True)
+
+@app.on_message(filters.text & ~filters.command(["start", "help"]))
+async def handle_text(client, message):
+    await message.reply_text("I can only process videos. Please send me a video file or use /help for more information.")
+    logger.info(f"Received text message from user {message.from_user.id}")
+
+async def main():
+    await app.start()
+    logger.info("Bot started. Listening for messages...")
+    asyncio.create_task(process_video_queue())
+    await idle()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(process_video_queue())
-    app.run()
+    app.run(main())
