@@ -218,62 +218,42 @@ def create_collage(image_paths: List[str], collage_path: str, video_width: int, 
         ))
         
         # Calculate position
-        x = (i % cols) * cell_width
-        y = (i // cols) * cell_height
+        col = i % cols
+        row = i // cols
+        x = col * cell_width
+        y = row * cell_height
         
-        # Paste image
         collage.paste(img_cropped, (x, y))
         
-        # Draw border
-        draw.rectangle([x, y, x + cell_width - 1, y + cell_height - 1], outline='white', width=2)
-        
-        # Add timestamp
-        timestamp = f"{ceil((i + 1) * video_duration / (len(images) + 1))}s"
-        text_width, text_height = draw.textsize(timestamp, font=font)
-        draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill='rgba(0, 0, 0, 128)')
-        draw.text((x + 5, y + 5), timestamp, font=font, fill='white')
+        # Add timestamp below each screenshot
+        timestamp = ceil((i + 1) * (video_duration / (cols * rows + 1)))
+        text_position = (x + 5, y + cell_height - 25)
+        draw.text(text_position, f"{timestamp}s", font=font, fill=(255, 255, 255))
     
-    # Add title
-    title = "Video Screenshots"
-    title_width, title_height = draw.textsize(title, font=font)
-    draw.rectangle([0, 0, collage_width, title_height + 20], fill='rgba(0, 0, 0, 128)')
-    draw.text(((collage_width - title_width) // 2, 10), title, font=font, fill='white')
-    
-    collage.save(collage_path, quality=95)
-    logger.info("Collage created successfully")
+    collage.save(collage_path)
+    logger.info(f"Collage created at {collage_path}")
 
-def upload_to_graph(image_path):
-    url = "https://graph.org/upload"
-    
+def upload_to_graph(image_path: str) -> str:
+    url = "https://telegra.ph/upload"
     with open(image_path, "rb") as file:
-        files = {"file": file}
-        response = requests.post(url, files=files)
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data[0].get("src"):
-            logger.info("Collage uploaded successfully")
-            return f"https://graph.org{data[0]['src']}"
-    
-    logger.error("Failed to upload collage")
-    raise Exception("Upload failed")
+        response = requests.post(url, files={"file": file})
+    response.raise_for_status()  # Ensure we raise an error for bad responses
+    response_data = response.json()
+    if isinstance(response_data, list) and "src" in response_data[0]:
+        graph_url = f"https://telegra.ph{response_data[0]['src']}"
+        logger.info(f"Image uploaded to Graph.org: {graph_url}")
+        return graph_url
+    else:
+        raise Exception(f"Unexpected response format: {response_data}")
 
-async def notify_user(message: Message, notification_text: str):
+async def notify_user(message: Message, text: str):
     try:
-        await message.reply_text(notification_text)
+        await message.reply_text(text)
+        logger.info(f"User {message.from_user.id} notified: {text}")
     except Exception as e:
-        logger.error(f"Failed to notify user: {e}")
-
-@app.on_message(filters.text & ~filters.command(["start", "help"]))
-async def handle_text(client, message):
-    await message.reply_text("I can only process videos. Please send me a video file or use /help for more information.")
-    logger.info(f"Received text message from user {message.from_user.id}")
-
-async def main():
-    await app.start()
-    logger.info("Bot started. Listening for messages...")
-    asyncio.create_task(process_video_queue())
-    await idle()
+        logger.error(f"Failed to notify user {message.from_user.id}: {e}")
 
 if __name__ == "__main__":
-    app.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(process_video_queue())
+    app.run()
