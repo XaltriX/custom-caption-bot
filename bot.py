@@ -15,7 +15,7 @@ from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Changed to DEBUG for more detailed logs
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("bot.log"),
@@ -78,10 +78,12 @@ async def process_video(message: Message):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, file_name)
+        logger.debug(f"Temporary video path: {video_path}")
 
         status_message = await message.reply_text("Downloading video:\n▰▰▰▰▰▰▰▰▰▰ 0%")
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
+            logger.debug("Video downloaded successfully")
         except Exception as e:
             logger.error(f"Error downloading video: {e}", exc_info=True)
             await status_message.edit_text(f"Failed to download the video. Please try again.")
@@ -90,19 +92,26 @@ async def process_video(message: Message):
 
         try:
             await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
+            logger.debug("Starting screenshot generation")
             screenshots, video_duration = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
+            logger.debug(f"Screenshot generation completed. Got {len(screenshots)} screenshots")
 
             if not screenshots:
+                logger.warning("No screenshots were generated")
                 await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
                 await notify_user(message, "There was an error generating screenshots from your video. The video might be corrupted or in an unsupported format.")
                 return
 
             await status_message.edit_text("Creating collage...")
+            logger.debug("Starting collage creation")
             collage_path = os.path.join(temp_dir, "collage.jpg")
             create_collage(screenshots, collage_path, video.width, video.height, video_duration)
+            logger.debug("Collage created successfully")
 
             await status_message.edit_text("Uploading collage...")
+            logger.debug("Starting collage upload")
             graph_url = await asyncio.to_thread(upload_to_graph, collage_path)
+            logger.debug(f"Collage uploaded successfully. URL: {graph_url}")
 
             await message.reply_text(
                 f"Here is your collage of 10 screenshots: {graph_url}",
@@ -139,37 +148,45 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
     try:
         logger.debug(f"Opening video file: {video_path}")
         clip = VideoFileClip(video_path)
+        logger.debug(f"Video clip opened successfully")
         duration = clip.duration
         logger.debug(f"Video duration: {duration}")
         interval = duration / (num_screenshots + 1)
         
         screenshots = []
         for i in range(1, num_screenshots + 1):
-            time = i * interval
-            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-            logger.debug(f"Saving frame at {time}s to {screenshot_path}")
-            clip.save_frame(screenshot_path, t=time)
-            screenshots.append(screenshot_path)
-            
-            percent = int((i / num_screenshots) * 100)
-            bar_length = 10
-            filled_length = int(bar_length * i // num_screenshots)
-            bar = '▰' * filled_length + '═' * (bar_length - filled_length)
-            progress_text = f"{bar} {percent}%"
-            
             try:
-                await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
-            except MessageNotModified:
-                pass
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-            
-            logger.info(f"Generated screenshot {i}/{num_screenshots}")
+                time = i * interval
+                screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+                logger.debug(f"Attempting to save frame at {time}s to {screenshot_path}")
+                clip.save_frame(screenshot_path, t=time)
+                logger.debug(f"Frame saved successfully")
+                screenshots.append(screenshot_path)
+                
+                percent = int((i / num_screenshots) * 100)
+                bar_length = 10
+                filled_length = int(bar_length * i // num_screenshots)
+                bar = '▰' * filled_length + '═' * (bar_length - filled_length)
+                progress_text = f"{bar} {percent}%"
+                
+                try:
+                    await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
+                    logger.debug(f"Status message updated: {progress_text}")
+                except MessageNotModified:
+                    logger.debug("Status message not modified (same content)")
+                except FloodWait as e:
+                    logger.warning(f"FloodWait error, sleeping for {e.value} seconds")
+                    await asyncio.sleep(e.value)
+                
+                logger.info(f"Generated screenshot {i}/{num_screenshots}")
+            except Exception as e:
+                logger.error(f"Error generating screenshot {i}: {e}", exc_info=True)
         
         clip.close()
+        logger.debug("Video clip closed")
         return screenshots, duration
     except Exception as e:
-        logger.error(f"Error generating screenshots: {e}", exc_info=True)
+        logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
         return [], 0
 
 def create_collage(image_paths: List[str], collage_path: str, video_width: int, video_height: int, video_duration: float):
