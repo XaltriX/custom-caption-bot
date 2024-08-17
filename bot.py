@@ -12,6 +12,7 @@ from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pyrogram.errors import MessageNotModified, FloodWait
 from moviepy.editor import VideoFileClip
+from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 
 # Configure logging
 logging.basicConfig(
@@ -93,7 +94,19 @@ async def process_video(message: Message):
         try:
             await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
             logger.debug("Starting screenshot generation")
-            screenshots, video_duration = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
+            
+            # Add a timeout for video processing
+            try:
+                screenshots, video_duration = await asyncio.wait_for(
+                    generate_screenshots_with_progress(video_path, 10, temp_dir, status_message),
+                    timeout=300  # 5 minutes timeout
+                )
+            except asyncio.TimeoutError:
+                logger.error("Video processing timed out")
+                await status_message.edit_text("Video processing timed out. The video might be too long or complex.")
+                await notify_user(message, "Video processing timed out. Please try a shorter or simpler video.")
+                return
+            
             logger.debug(f"Screenshot generation completed. Got {len(screenshots)} screenshots")
 
             if not screenshots:
@@ -159,7 +172,14 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
                 time = i * interval
                 screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
                 logger.debug(f"Attempting to save frame at {time}s to {screenshot_path}")
-                clip.save_frame(screenshot_path, t=time)
+                
+                # Use a timeout for frame extraction
+                frame = await asyncio.wait_for(
+                    asyncio.to_thread(clip.get_frame, time),
+                    timeout=30  # 30 seconds timeout for each frame
+                )
+                
+                Image.fromarray(frame).save(screenshot_path)
                 logger.debug(f"Frame saved successfully")
                 screenshots.append(screenshot_path)
                 
@@ -179,6 +199,8 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
                     await asyncio.sleep(e.value)
                 
                 logger.info(f"Generated screenshot {i}/{num_screenshots}")
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout while generating screenshot {i}")
             except Exception as e:
                 logger.error(f"Error generating screenshot {i}: {e}", exc_info=True)
         
