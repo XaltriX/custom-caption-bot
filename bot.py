@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from typing import List
+from typing import List, Tuple
 import tempfile
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -11,8 +11,9 @@ from math import ceil
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pyrogram.errors import MessageNotModified, FloodWait
-from moviepy.editor import VideoFileClip
-from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
+
+import cv2
+import numpy as np
 
 # Configure logging
 logging.basicConfig(
@@ -95,18 +96,7 @@ async def process_video(message: Message):
             await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
             logger.debug("Starting screenshot generation")
             
-            # Add a timeout for video processing
-            try:
-                screenshots, video_duration = await asyncio.wait_for(
-                    generate_screenshots_with_progress(video_path, 10, temp_dir, status_message),
-                    timeout=300  # 5 minutes timeout
-                )
-            except asyncio.TimeoutError:
-                logger.error("Video processing timed out")
-                await status_message.edit_text("Video processing timed out. The video might be too long or complex.")
-                await notify_user(message, "Video processing timed out. Please try a shorter or simpler video.")
-                return
-            
+            screenshots, video_duration = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
             logger.debug(f"Screenshot generation completed. Got {len(screenshots)} screenshots")
 
             if not screenshots:
@@ -157,56 +147,53 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
     await message.download(file_name=file_path, progress=progress)
     logger.info(f"Video download completed for user {message.from_user.id}")
 
-async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> tuple[List[str], float]:
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> Tuple[List[str], float]:
     try:
-        logger.debug(f"Opening video file: {video_path}")
-        clip = VideoFileClip(video_path)
-        logger.debug(f"Video clip opened successfully")
-        duration = clip.duration
-        logger.debug(f"Video duration: {duration}")
-        interval = duration / (num_screenshots + 1)
-        
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error("Error opening video file")
+            return [], 0
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        duration = total_frames / fps if fps > 0 else 0
+
+        logger.debug(f"Video info: {total_frames} frames, {fps} fps, {duration} seconds")
+
+        interval = total_frames // (num_screenshots + 1)
         screenshots = []
+
         for i in range(1, num_screenshots + 1):
+            frame_pos = i * interval
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            ret, frame = cap.read()
+            
+            if not ret:
+                logger.warning(f"Failed to read frame at position {frame_pos}")
+                continue
+
+            screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
+            cv2.imwrite(screenshot_path, frame)
+            screenshots.append(screenshot_path)
+
+            percent = int((i / num_screenshots) * 100)
+            bar_length = 10
+            filled_length = int(bar_length * i // num_screenshots)
+            bar = '▰' * filled_length + '═' * (bar_length - filled_length)
+            progress_text = f"{bar} {percent}%"
+
             try:
-                time = i * interval
-                screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-                logger.debug(f"Attempting to save frame at {time}s to {screenshot_path}")
-                
-                # Use a timeout for frame extraction
-                frame = await asyncio.wait_for(
-                    asyncio.to_thread(clip.get_frame, time),
-                    timeout=30  # 30 seconds timeout for each frame
-                )
-                
-                Image.fromarray(frame).save(screenshot_path)
-                logger.debug(f"Frame saved successfully")
-                screenshots.append(screenshot_path)
-                
-                percent = int((i / num_screenshots) * 100)
-                bar_length = 10
-                filled_length = int(bar_length * i // num_screenshots)
-                bar = '▰' * filled_length + '═' * (bar_length - filled_length)
-                progress_text = f"{bar} {percent}%"
-                
-                try:
-                    await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
-                    logger.debug(f"Status message updated: {progress_text}")
-                except MessageNotModified:
-                    logger.debug("Status message not modified (same content)")
-                except FloodWait as e:
-                    logger.warning(f"FloodWait error, sleeping for {e.value} seconds")
-                    await asyncio.sleep(e.value)
-                
-                logger.info(f"Generated screenshot {i}/{num_screenshots}")
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout while generating screenshot {i}")
-            except Exception as e:
-                logger.error(f"Error generating screenshot {i}: {e}", exc_info=True)
-        
-        clip.close()
-        logger.debug("Video clip closed")
+                await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
+            except MessageNotModified:
+                pass
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+
+            logger.info(f"Generated screenshot {i}/{num_screenshots}")
+
+        cap.release()
         return screenshots, duration
+
     except Exception as e:
         logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
         return [], 0
@@ -215,10 +202,8 @@ def create_collage(image_paths: List[str], collage_path: str, video_width: int, 
     try:
         images = [Image.open(image) for image in image_paths]
         
-        # Determine orientation
         is_portrait = video_height > video_width
         
-        # Set collage dimensions and layout
         if is_portrait:
             cols, rows = 2, 5
             collage_width = 1080
@@ -234,14 +219,12 @@ def create_collage(image_paths: List[str], collage_path: str, video_width: int, 
         collage = Image.new('RGB', (collage_width, collage_height), color='white')
         draw = ImageDraw.Draw(collage)
         
-        # Load a font (you may need to adjust the path or use a different font)
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
         except IOError:
             font = ImageFont.load_default()
         
         for i, img in enumerate(images):
-            # Resize and crop the image to fit the cell while maintaining aspect ratio
             img_ratio = img.width / img.height
             cell_ratio = cell_width / cell_height
             
@@ -260,23 +243,18 @@ def create_collage(image_paths: List[str], collage_path: str, video_width: int, 
                 (img_resized.height + cell_height) // 2
             ))
             
-            # Calculate position
             x = (i % cols) * cell_width
             y = (i // cols) * cell_height
             
-            # Paste image
             collage.paste(img_cropped, (x, y))
             
-            # Draw border
             draw.rectangle([x, y, x + cell_width - 1, y + cell_height - 1], outline='white', width=2)
             
-            # Add timestamp
             timestamp = f"{ceil((i + 1) * video_duration / (len(images) + 1))}s"
             text_width, text_height = draw.textsize(timestamp, font=font)
             draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill='rgba(0, 0, 0, 128)')
             draw.text((x + 5, y + 5), timestamp, font=font, fill='white')
         
-        # Add title
         title = "Video Screenshots"
         title_width, title_height = draw.textsize(title, font=font)
         draw.rectangle([0, 0, collage_width, title_height + 20], fill='rgba(0, 0, 0, 128)')
