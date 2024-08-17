@@ -4,8 +4,9 @@ import logging
 from typing import List
 import tempfile
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import sys
+from math import ceil
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
@@ -89,7 +90,7 @@ async def process_video(message: Message):
 
         try:
             await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
-            screenshots = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
+            screenshots, video_duration = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
 
             if not screenshots:
                 await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
@@ -98,7 +99,7 @@ async def process_video(message: Message):
 
             await status_message.edit_text("Creating collage...")
             collage_path = os.path.join(temp_dir, "collage.jpg")
-            create_collage(screenshots, collage_path)
+            create_collage(screenshots, collage_path, video.width, video.height, video_duration)
 
             await status_message.edit_text("Uploading collage...")
             graph_url = await asyncio.to_thread(upload_to_graph, collage_path)
@@ -129,12 +130,12 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         except MessageNotModified:
             pass
         except FloodWait as e:
-            await asyncio.sleep(e.value)  # Use e.value instead of e.x
+            await asyncio.sleep(e.value)
 
     await message.download(file_name=file_path, progress=progress)
     logger.info(f"Video download completed for user {message.from_user.id}")
 
-async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> tuple[List[str], float]:
     try:
         clip = VideoFileClip(video_path)
         duration = clip.duration
@@ -158,32 +159,85 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
             except MessageNotModified:
                 pass
             except FloodWait as e:
-                await asyncio.sleep(e.value)  # Use e.value instead of e.x
+                await asyncio.sleep(e.value)
             
             logger.info(f"Generated screenshot {i}/{num_screenshots}")
         
         clip.close()
-        return screenshots
+        return screenshots, duration
     except Exception as e:
         logger.error(f"Error generating screenshots: {e}")
-        return []
+        return [], 0
 
-def create_collage(image_paths: List[str], collage_path: str):
+def create_collage(image_paths: List[str], collage_path: str, video_width: int, video_height: int, video_duration: float):
     images = [Image.open(image) for image in image_paths]
     
-    rows, cols = 3, 4
-    cell_width = 400
-    cell_height = 300
+    # Determine orientation
+    is_portrait = video_height > video_width
     
-    collage_width = cell_width * cols
-    collage_height = cell_height * rows
-    collage = Image.new('RGB', (collage_width, collage_height))
+    # Set collage dimensions and layout
+    if is_portrait:
+        cols, rows = 2, 5
+        collage_width = 1080
+        collage_height = int(collage_width * (video_height / video_width))
+    else:
+        cols, rows = 3, 4
+        collage_height = 1080
+        collage_width = int(collage_height * (video_width / video_height))
+    
+    cell_width = collage_width // cols
+    cell_height = collage_height // rows
+    
+    collage = Image.new('RGB', (collage_width, collage_height), color='white')
+    draw = ImageDraw.Draw(collage)
+    
+    # Load a font (you may need to adjust the path or use a different font)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+    except IOError:
+        font = ImageFont.load_default()
     
     for i, img in enumerate(images):
-        img_resized = img.resize((cell_width, cell_height), Image.LANCZOS)
-        x = (i % 4) * cell_width
-        y = (i // 4) * cell_height
-        collage.paste(img_resized, (x, y))
+        # Resize and crop the image to fit the cell while maintaining aspect ratio
+        img_ratio = img.width / img.height
+        cell_ratio = cell_width / cell_height
+        
+        if img_ratio > cell_ratio:
+            new_height = cell_height
+            new_width = int(new_height * img_ratio)
+        else:
+            new_width = cell_width
+            new_height = int(new_width / img_ratio)
+        
+        img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+        img_cropped = img_resized.crop((
+            (img_resized.width - cell_width) // 2,
+            (img_resized.height - cell_height) // 2,
+            (img_resized.width + cell_width) // 2,
+            (img_resized.height + cell_height) // 2
+        ))
+        
+        # Calculate position
+        x = (i % cols) * cell_width
+        y = (i // cols) * cell_height
+        
+        # Paste image
+        collage.paste(img_cropped, (x, y))
+        
+        # Draw border
+        draw.rectangle([x, y, x + cell_width - 1, y + cell_height - 1], outline='white', width=2)
+        
+        # Add timestamp
+        timestamp = f"{ceil((i + 1) * video_duration / (len(images) + 1))}s"
+        text_width, text_height = draw.textsize(timestamp, font=font)
+        draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill='rgba(0, 0, 0, 128)')
+        draw.text((x + 5, y + 5), timestamp, font=font, fill='white')
+    
+    # Add title
+    title = "Video Screenshots"
+    title_width, title_height = draw.textsize(title, font=font)
+    draw.rectangle([0, 0, collage_width, title_height + 20], fill='rgba(0, 0, 0, 128)')
+    draw.text(((collage_width - title_width) // 2, 10), title, font=font, fill='white')
     
     collage.save(collage_path, quality=95)
     logger.info("Collage created successfully")
