@@ -189,28 +189,28 @@ def create_collage(image_paths: List[str], collage_path: str):
         (0, 0), (1, 0), (2, 0),  # First row
         (0, 1), (1, 1), (2, 1),  # Second row
         (0, 2), (1, 2), (2, 2),  # Third row
-        (0, 3), (1, 3), (2, 3)   # Fourth row
+        (0, 3)                   # Fourth row (single image)
     ]
     
     border_width = 2
     border_color = (0, 0, 0)  # Black color for the border
     
     for i, (img, (x, y)) in enumerate(zip(images, layout)):
-        img_resized = img.resize((image_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
-        x_pos = x * image_width + border_width
-        y_pos = y * image_height + border_width
-        
-        # Create a new image with border
-        img_with_border = Image.new('RGB', (image_width, image_height), border_color)
-        img_with_border.paste(img_resized, (border_width, border_width))
-        
-        # For the last image, make it span the full width
-        if i == 9:
-            img_with_border = img_with_border.resize((collage_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
-            img_with_border = Image.new('RGB', (collage_width, image_height), border_color).paste(img_with_border, (border_width, border_width))
-            x_pos = border_width
-        
-        collage.paste(img_with_border, (x_pos, y_pos))
+        if i < 9:  # For the first 9 images
+            img_resized = img.resize((image_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
+            x_pos = x * image_width + border_width
+            y_pos = y * image_height + border_width
+            
+            # Create a new image with border
+            img_with_border = Image.new('RGB', (image_width, image_height), border_color)
+            img_with_border.paste(img_resized, (border_width, border_width))
+            
+            collage.paste(img_with_border, (x_pos, y_pos))
+        else:  # For the last image (10th screenshot)
+            img_resized = img.resize((collage_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
+            img_with_border = Image.new('RGB', (collage_width, image_height), border_color)
+            img_with_border.paste(img_resized, (border_width, border_width))
+            collage.paste(img_with_border, (border_width, 3 * image_height + border_width))
     
     collage.save(collage_path, quality=95)
     logger.info("Collage created successfully")
