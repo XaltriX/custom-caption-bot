@@ -1,23 +1,20 @@
 import os
 import asyncio
 import logging
-from typing import List, Tuple
+from typing import List
 import tempfile
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import sys
-from math import ceil
 
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pyrogram.errors import MessageNotModified, FloodWait
-
-import cv2
-import numpy as np
+from moviepy.editor import VideoFileClip
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("bot.log"),
@@ -70,7 +67,7 @@ async def process_video_queue():
             else:
                 await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Error in process_video_queue: {e}", exc_info=True)
+            logger.error(f"Error in process_video_queue: {e}")
             await asyncio.sleep(5)
 
 async def process_video(message: Message):
@@ -80,41 +77,31 @@ async def process_video(message: Message):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, file_name)
-        logger.debug(f"Temporary video path: {video_path}")
 
         status_message = await message.reply_text("Downloading video:\n▰▰▰▰▰▰▰▰▰▰ 0%")
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
-            logger.debug("Video downloaded successfully")
         except Exception as e:
-            logger.error(f"Error downloading video: {e}", exc_info=True)
+            logger.error(f"Error downloading video: {e}")
             await status_message.edit_text(f"Failed to download the video. Please try again.")
             await notify_user(message, "There was an error downloading your video. Please try uploading it again.")
             return
 
         try:
             await status_message.edit_text("Generating screenshots:\n▰▰▰▰▰▰▰▰▰▰ 0%")
-            logger.debug("Starting screenshot generation")
-            
-            screenshots, video_duration = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
-            logger.debug(f"Screenshot generation completed. Got {len(screenshots)} screenshots")
+            screenshots = await generate_screenshots_with_progress(video_path, 10, temp_dir, status_message)
 
             if not screenshots:
-                logger.warning("No screenshots were generated")
                 await status_message.edit_text("Failed to generate screenshots. The video might be corrupted or in an unsupported format.")
                 await notify_user(message, "There was an error generating screenshots from your video. The video might be corrupted or in an unsupported format.")
                 return
 
             await status_message.edit_text("Creating collage...")
-            logger.debug("Starting collage creation")
             collage_path = os.path.join(temp_dir, "collage.jpg")
-            create_collage(screenshots, collage_path, video.width, video.height, video_duration)
-            logger.debug("Collage created successfully")
+            create_collage(screenshots, collage_path)
 
             await status_message.edit_text("Uploading collage...")
-            logger.debug("Starting collage upload")
             graph_url = await asyncio.to_thread(upload_to_graph, collage_path)
-            logger.debug(f"Collage uploaded successfully. URL: {graph_url}")
 
             await message.reply_text(
                 f"Here is your collage of 10 screenshots: {graph_url}",
@@ -125,7 +112,7 @@ async def process_video(message: Message):
             logger.info(f"Video processing completed for user {message.from_user.id}")
 
         except Exception as e:
-            logger.error(f"Error processing video: {e}", exc_info=True)
+            logger.error(f"Error processing video: {e}")
             await status_message.edit_text(f"An error occurred while processing. The video might be corrupted or in an unsupported format.")
             await notify_user(message, "There was an error processing your video. It might be corrupted or in an unsupported format.")
 
@@ -147,123 +134,72 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
     await message.download(file_name=file_path, progress=progress)
     logger.info(f"Video download completed for user {message.from_user.id}")
 
-async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> Tuple[List[str], float]:
+async def generate_screenshots_with_progress(video_path: str, num_screenshots: int, output_dir: str, status_message: Message) -> List[str]:
     try:
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            logger.error("Error opening video file")
-            return [], 0
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        duration = total_frames / fps if fps > 0 else 0
-
-        logger.debug(f"Video info: {total_frames} frames, {fps} fps, {duration} seconds")
-
-        interval = total_frames // (num_screenshots + 1)
+        clip = VideoFileClip(video_path)
+        duration = clip.duration
+        interval = duration / (num_screenshots + 1)
+        
         screenshots = []
-
         for i in range(1, num_screenshots + 1):
-            frame_pos = i * interval
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
-            ret, frame = cap.read()
-            
-            if not ret:
-                logger.warning(f"Failed to read frame at position {frame_pos}")
-                continue
-
+            time = i * interval
             screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
-            cv2.imwrite(screenshot_path, frame)
+            clip.save_frame(screenshot_path, t=time)
             screenshots.append(screenshot_path)
-
+            
             percent = int((i / num_screenshots) * 100)
             bar_length = 10
             filled_length = int(bar_length * i // num_screenshots)
             bar = '▰' * filled_length + '═' * (bar_length - filled_length)
             progress_text = f"{bar} {percent}%"
-
+            
             try:
                 await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
             except MessageNotModified:
                 pass
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-
+            
             logger.info(f"Generated screenshot {i}/{num_screenshots}")
-
-        cap.release()
-        return screenshots, duration
-
+        
+        clip.close()
+        return screenshots
     except Exception as e:
-        logger.error(f"Error in generate_screenshots_with_progress: {e}", exc_info=True)
-        return [], 0
+        logger.error(f"Error generating screenshots: {e}")
+        return []
 
-def create_collage(image_paths: List[str], collage_path: str, video_width: int, video_height: int, video_duration: float):
-    try:
-        images = [Image.open(image) for image in image_paths]
-        
-        is_portrait = video_height > video_width
-        
-        if is_portrait:
-            cols, rows = 2, 5
-            collage_width = 1080
-            collage_height = int(collage_width * (video_height / video_width))
-        else:
-            cols, rows = 3, 4
-            collage_height = 1080
-            collage_width = int(collage_height * (video_width / video_height))
-        
-        cell_width = collage_width // cols
-        cell_height = collage_height // rows
-        
-        collage = Image.new('RGB', (collage_width, collage_height), color='white')
-        draw = ImageDraw.Draw(collage)
-        
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
-        except IOError:
-            font = ImageFont.load_default()
-        
-        for i, img in enumerate(images):
-            img_ratio = img.width / img.height
-            cell_ratio = cell_width / cell_height
-            
-            if img_ratio > cell_ratio:
-                new_height = cell_height
-                new_width = int(new_height * img_ratio)
-            else:
-                new_width = cell_width
-                new_height = int(new_width / img_ratio)
-            
-            img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-            img_cropped = img_resized.crop((
-                (img_resized.width - cell_width) // 2,
-                (img_resized.height - cell_height) // 2,
-                (img_resized.width + cell_width) // 2,
-                (img_resized.height + cell_height) // 2
-            ))
-            
-            x = (i % cols) * cell_width
-            y = (i // cols) * cell_height
-            
-            collage.paste(img_cropped, (x, y))
-            
-            draw.rectangle([x, y, x + cell_width - 1, y + cell_height - 1], outline='white', width=2)
-            
-            timestamp = f"{ceil((i + 1) * video_duration / (len(images) + 1))}s"
-            text_width, text_height = draw.textsize(timestamp, font=font)
-            draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill='rgba(0, 0, 0, 128)')
-            draw.text((x + 5, y + 5), timestamp, font=font, fill='white')
-        
-        title = "Video Screenshots"
-        title_width, title_height = draw.textsize(title, font=font)
-        draw.rectangle([0, 0, collage_width, title_height + 20], fill='rgba(0, 0, 0, 128)')
-        draw.text(((collage_width - title_width) // 2, 10), title, font=font, fill='white')
-        
-        collage.save(collage_path, quality=95)
-        logger.info("Collage created successfully")
-    except Exception as e:
-        logger.error(f"Error creating collage: {e}", exc_info=True)
+def create_collage(image_paths: List[str], collage_path: str):
+    images = [Image.open(image) for image in image_paths]
+    
+    # Calculate the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
+    aspect_ratio = images[0].width / images[0].height
+    
+    # Set the width of each image in the collage
+    image_width = 400
+    image_height = int(image_width / aspect_ratio)
+    
+    # Calculate collage dimensions
+    collage_width = image_width * 3
+    collage_height = image_height * 4
+    
+    collage = Image.new('RGB', (collage_width, collage_height))
+    
+    # Define the layout
+    layout = [
+        (0, 0), (1, 0), (2, 0),  # First row
+        (0, 1), (1, 1), (2, 1),  # Second row
+        (0.5, 2), (1.5, 2),      # Third row
+        (0.5, 3), (1.5, 3)       # Fourth row
+    ]
+    
+    for img, (x, y) in zip(images, layout):
+        img_resized = img.resize((image_width, image_height), Image.LANCZOS)
+        x_pos = int(x * image_width)
+        y_pos = int(y * image_height)
+        collage.paste(img_resized, (x_pos, y_pos))
+    
+    collage.save(collage_path, quality=95)
+    logger.info("Collage created successfully")
 
 def upload_to_graph(image_path):
     url = "https://graph.org/upload"
@@ -285,7 +221,7 @@ async def notify_user(message: Message, notification_text: str):
     try:
         await message.reply_text(notification_text)
     except Exception as e:
-        logger.error(f"Failed to notify user: {e}", exc_info=True)
+        logger.error(f"Failed to notify user: {e}")
 
 @app.on_message(filters.text & ~filters.command(["start", "help"]))
 async def handle_text(client, message):
