@@ -4,9 +4,8 @@ import logging
 from typing import List
 import tempfile
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image
 import sys
-
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message
 from pyrogram.errors import MessageNotModified, FloodWait
@@ -77,8 +76,8 @@ async def process_video(message: Message):
 
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, file_name)
-
         status_message = await message.reply_text("Downloading video:\n▰▰▰▰▰▰▰▰▰▰ 0%")
+
         try:
             await download_video_with_progress(message, file_id, video_path, status_message)
         except Exception as e:
@@ -101,13 +100,12 @@ async def process_video(message: Message):
             create_collage(screenshots, collage_path)
 
             await status_message.edit_text("Uploading collage...")
-            graph_url = await asyncio.to_thread(upload_to_graph, collage_path)
+            graph_url = await asyncio.to_thread(upload_to_envs, collage_path)
 
             await message.reply_text(
                 f"Here is your collage of 10 screenshots: {graph_url}",
                 reply_to_message_id=message.id
             )
-
             await status_message.edit_text("Processing completed.")
             logger.info(f"Video processing completed for user {message.from_user.id}")
 
@@ -123,7 +121,7 @@ async def download_video_with_progress(message: Message, file_id: str, file_path
         filled_length = int(bar_length * current // total)
         bar = '▰' * filled_length + '═' * (bar_length - filled_length)
         progress_text = f"{bar} {percent}%"
-        
+
         try:
             await status_message.edit_text(f"Downloading video:\n{progress_text}")
         except MessageNotModified:
@@ -139,29 +137,29 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
         clip = VideoFileClip(video_path)
         duration = clip.duration
         interval = duration / (num_screenshots + 1)
-        
         screenshots = []
+
         for i in range(1, num_screenshots + 1):
             time = i * interval
             screenshot_path = os.path.join(output_dir, f"screenshot_{i}.jpg")
             clip.save_frame(screenshot_path, t=time)
             screenshots.append(screenshot_path)
-            
+
             percent = int((i / num_screenshots) * 100)
             bar_length = 10
             filled_length = int(bar_length * i // num_screenshots)
             bar = '▰' * filled_length + '═' * (bar_length - filled_length)
             progress_text = f"{bar} {percent}%"
-            
+
             try:
                 await status_message.edit_text(f"Generating screenshots:\n{progress_text}")
             except MessageNotModified:
                 pass
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-            
+
             logger.info(f"Generated screenshot {i}/{num_screenshots}")
-        
+
         clip.close()
         return screenshots
     except Exception as e:
@@ -170,64 +168,49 @@ async def generate_screenshots_with_progress(video_path: str, num_screenshots: i
 
 def create_collage(image_paths: List[str], collage_path: str):
     images = [Image.open(image) for image in image_paths]
-    
-    # Calculate the aspect ratio of the first image (assuming all screenshots have the same aspect ratio)
     aspect_ratio = images[0].width / images[0].height
-    
-    # Set the width of each image in the collage
     image_width = 400
     image_height = int(image_width / aspect_ratio)
-    
-    # Calculate collage dimensions
     collage_width = image_width * 3
     collage_height = image_height * 4
-    
     collage = Image.new('RGB', (collage_width, collage_height), color='white')
-    
-    # Define the layout
+
     layout = [
         (0, 0), (1, 0), (2, 0),  # First row
         (0, 1), (1, 1), (2, 1),  # Second row
         (0, 2), (1, 2), (2, 2),  # Third row
         (0, 3)                   # Fourth row (single image)
     ]
-    
+
     border_width = 2
     border_color = (0, 0, 0)  # Black color for the border
-    
+
     for i, (img, (x, y)) in enumerate(zip(images, layout)):
         if i < 9:  # For the first 9 images
-            img_resized = img.resize((image_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
+            img_resized = img.resize((image_width - 2 * border_width, image_height - 2 * border_width), Image.LANCZOS)
             x_pos = x * image_width + border_width
             y_pos = y * image_height + border_width
-            
-            # Create a new image with border
             img_with_border = Image.new('RGB', (image_width, image_height), border_color)
             img_with_border.paste(img_resized, (border_width, border_width))
-            
             collage.paste(img_with_border, (x_pos, y_pos))
         else:  # For the last image (10th screenshot)
-            img_resized = img.resize((collage_width - 2*border_width, image_height - 2*border_width), Image.LANCZOS)
+            img_resized = img.resize((collage_width - 2 * border_width, image_height - 2 * border_width), Image.LANCZOS)
             img_with_border = Image.new('RGB', (collage_width, image_height), border_color)
             img_with_border.paste(img_resized, (border_width, border_width))
             collage.paste(img_with_border, (border_width, 3 * image_height + border_width))
-    
+
     collage.save(collage_path, quality=95)
     logger.info("Collage created successfully")
 
-def upload_to_graph(image_path):
-    url = "https://graph.org/upload"
-    
+def upload_to_envs(image_path):
+    url = "https://envs.sh"
     with open(image_path, "rb") as file:
         files = {"file": file}
         response = requests.post(url, files=files)
-    
     if response.status_code == 200:
-        data = response.json()
-        if data[0].get("src"):
-            logger.info("Collage uploaded successfully")
-            return f"https://graph.org{data[0]['src']}"
-    
+        data = response.text.strip()
+        logger.info("Collage uploaded successfully")
+        return data
     logger.error("Failed to upload collage")
     raise Exception("Upload failed")
 
