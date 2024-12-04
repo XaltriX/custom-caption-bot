@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Bot configuration
 API_ID = 28192191
 API_HASH = '663164abd732848a90e76e25cb9cf54a'
-BOT_TOKEN = '7147998933:AAGxVDx1pxyM8MVYvrbm3Nb8zK6DgI1H8RU'
+BOT_TOKEN = '8151073275:AAH3KERuA23PE5DUP23LfuWS2VT5hxjH_yY'
 
 # Initialize the Pyrogram client
 app = Client("screenshot_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
