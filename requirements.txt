@@ -7,3 +7,4 @@ moviepy
 opencv-python-headless
 ffmpeg
 ffmpeg-python
+requests
